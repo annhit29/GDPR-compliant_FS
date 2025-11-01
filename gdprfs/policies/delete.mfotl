@@ -1,0 +1,1 @@
+ALWAYS (FORALL fid. Request(fid) IMPLIES EVENTUALLY[0,5] Delete(fid))

@@ -1,0 +1,14 @@
+werkzeug==2.2.2
+lorem-text==2.1
+tqdm==4.61.1
+flask==2.2.2
+flask_sqlalchemy==3.0.2
+flask_hashing==1.1
+requests==2.22.0
+pandas==1.5.2
+matplotlib==3.6.2
+lark-parser==0.9.0
+pycryptodome==3.10.1
+astunparse==1.6.2
+uuid==1.30
+beautifulsoup4==4.11.2

@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% load bootstrap %}
+{% block title %}Login to Simplified Twitter{% endblock %}
+{% block content %}
+    <form method="post" class="center">
+        <fieldset class="registration-form">
+            {{ form|bootstrap_inline}}
+            {% csrf_token %}
+            <input type="submit" class="btn btn-success" value="Login">
+        </fieldset>
+
+        <hr/>
+        <a href="{% url 'signup' %}">Don't have account? Signup</a>
+    </form>
+
+{% endblock %}

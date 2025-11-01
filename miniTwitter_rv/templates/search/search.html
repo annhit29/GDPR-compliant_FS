@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% load bootstrap %}
+{% block content %}
+    <div style="margin: 0 auto;display: table;">
+        <h2>Search</h2>
+        <form method="get">
+            <form class="pull-left" style="margin-top: 10px;margin-bottom: 0;" action="/search/twit" method="get">
+                <input type="text" name="q" placeholder="Search ...">
+                <button type="submit" style="margin-top: -10px" class="btn btn-primary"><i class="icon icon-search"></i></button>
+            </form>
+        </form>
+        {% if query %}
+            <h3>Results</h3>
+            {% if page.object_list %}
+                <ol>
+                    {% for result in page.object_list %}
+                        <li><a href="#">{{ result.object.content }}</a></li>
+                    {% endfor %}
+                </ol>
+            {% else %}
+                <p>No results found.</p>
+            {% endif %}
+
+            {% if page.has_previous or page.has_next %}
+                <div>
+                    {% if page.has_previous %}<a href="?q={{ query }}&amp;page={{ page.previous_page_number }}">{% endif %}&laquo; Previous{% if page.has_previous %}</a>{% endif %}
+                    |
+                    {% if page.has_next %}<a href="?q={{ query }}&amp;page={{ page.next_page_number }}">{% endif %}Next &raquo;{% if page.has_next %}</a>{% endif %}
+                </div>
+            {% endif %}
+        {% endif %}
+    </div>
+{% endblock %}

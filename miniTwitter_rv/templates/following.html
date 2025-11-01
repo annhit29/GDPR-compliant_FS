@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Following List{%endblock%}
+{% block content %}
+    <div class="row-fluid" style="padding: 20px">
+        {% if following_list %}
+            {% for user in  following_list %}
+                <div class="span3">
+                    <h4>{{ user.first_name }} {{  user.last_name }}</h4>
+                    <ul class="arrow">
+                        <li>First Name: {{ user.first_name }} </li>
+                        <li>Last Name: {{  user.last_name }}</li>
+                        <li>Username: {{ user.username }}</li>
+                    </ul>
+                </div>
+            {% endfor %}
+        {% else %}
+            <b>You are not following any one! Please follow someone</b>
+        {% endif %}
+    </div>
+{% endblock %}
+
+

@@ -1,0 +1,164 @@
+Metadata-Version: 2.1
+Name: ambient-toolbox
+Version: 12.5.0
+Summary: Python toolbox of Ambient Digital containing an abundance of useful tools and gadgets.
+Author-email: Ambient Digital <hello@ambient.digital>
+Description-Content-Type: text/markdown
+Classifier: Development Status :: 5 - Production/Stable
+Classifier: Environment :: Web Environment
+Classifier: Framework :: Django
+Classifier: Framework :: Django :: 4.2
+Classifier: Framework :: Django :: 5.1
+Classifier: Framework :: Django :: 5.2
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Natural Language :: English
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Programming Language :: Python :: 3.13
+Classifier: Topic :: Utilities
+Requires-Dist: Django>=4.2
+Requires-Dist: python-dateutil>=2.5.3
+Requires-Dist: nh3>=0.2,<1 ; extra == "bleacher"
+Requires-Dist: typer~=0.12 ; extra == "dev"
+Requires-Dist: pytest-django~=4.9 ; extra == "dev"
+Requires-Dist: pytest-mock~=3.14 ; extra == "dev"
+Requires-Dist: coverage~=7.6 ; extra == "dev"
+Requires-Dist: pre-commit~=4.2 ; extra == "dev"
+Requires-Dist: ruff~=0.11 ; extra == "dev"
+Requires-Dist: sphinx~=7.1 ; extra == "dev"
+Requires-Dist: sphinx-rtd-theme~=2.0 ; extra == "dev"
+Requires-Dist: m2r2==0.3.3.post2 ; extra == "dev"
+Requires-Dist: mistune<2.0.0 ; extra == "dev"
+Requires-Dist: flit~=3.12 ; extra == "dev"
+Requires-Dist: keyring~=25.6 ; extra == "dev"
+Requires-Dist: ambient-package-update ; extra == "dev"
+Requires-Dist: gevent~=25.1 ; extra == "dev"
+Requires-Dist: httpx~=0.28 ; extra == "dev"
+Requires-Dist: freezegun~=1.5 ; extra == "dev"
+Requires-Dist: djangorestframework>=3.8.2 ; extra == "drf"
+Requires-Dist: httpx~=0.28 ; extra == "gitlab-coverage"
+Requires-Dist: graphene-django>=2.2.0 ; extra == "graphql"
+Requires-Dist: django-graphql-jwt>=0.2.1 ; extra == "graphql"
+Requires-Dist: tomlkit~=0.13 ; extra == "import-linter"
+Requires-Dist: sentry-sdk>=1.19.1 ; extra == "sentry"
+Requires-Dist: django-crispy-forms>=1.4.0 ; extra == "view-layer"
+Project-URL: Bugtracker, https://github.com/ambient-innovation/ambient-toolbox/issues
+Project-URL: Changelog, https://ambient-toolbox.readthedocs.io/en/latest/features/changelog.html
+Project-URL: Documentation, https://ambient-toolbox.readthedocs.io/en/latest/index.html
+Project-URL: Homepage, https://github.com/ambient-innovation/ambient-toolbox/
+Project-URL: Maintained by, https://ambient.digital/
+Provides-Extra: bleacher
+Provides-Extra: dev
+Provides-Extra: drf
+Provides-Extra: gitlab-coverage
+Provides-Extra: graphql
+Provides-Extra: import-linter
+Provides-Extra: sentry
+Provides-Extra: view-layer
+
+[![PyPI release](https://img.shields.io/pypi/v/ambient-toolbox.svg)](https://pypi.org/project/ambient-toolbox/)
+[![Downloads](https://static.pepy.tech/badge/ambient-toolbox)](https://pepy.tech/project/ambient-toolbox)
+[![Coverage](https://img.shields.io/badge/Coverage-73.21%25-success)](https://github.com/ambient-innovation/ambient-toolbox/actions?workflow=CI)
+[![Linting](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Coding Style](https://img.shields.io/badge/code%20style-Ruff-000000.svg)](https://github.com/astral-sh/ruff)
+[![Documentation Status](https://readthedocs.org/projects/ambient-toolbox/badge/?version=latest)](https://ambient-toolbox.readthedocs.io/en/latest/?badge=latest)
+
+Python toolbox of Ambient Digital containing an abundance of useful tools and gadgets.
+
+* [PyPI](https://pypi.org/project/ambient-toolbox/)
+* [GitHub](https://github.com/ambient-innovation/ambient-toolbox)
+* [Full documentation](https://ambient-toolbox.readthedocs.io/en/latest/index.html)
+* Creator & Maintainer: [Ambient Digital](https://ambient.digital/)
+
+## Features
+
+* Useful classes and mixins for Django admin
+* Coverage script for GitLab
+* Extensions for DRF and GraphQL
+* Mailing backends for Django
+* Management commands for validating a projects test structure
+* Object ownership tracking with timestamping
+* Pattern for improved workflow with Django ORM
+* Helper and util functions for many different use-cases
+* Sentry plugins
+* django-scrubber wrapper class
+* Mixins and test classes for django (class-based) views
+
+# Migration from "ai_django_core"
+
+This package was previously known as [ai_django_core](https://pypi.org/project/ai-django-core/). Due to the
+misleading nature of the name, we chose to rename it with something more meaningful.
+
+The migration is really simple, just:
+
+* Install ambient-toolbox and remove the dependency to ai-django-core
+* Search and replace all usages of `from ai_django_core...` to `from ambient_toolbox...`
+* The class-based mail functionality was moved to a separate package called
+[django-pony-express](https://pypi.org/project/django-pony-express/).
+
+## Installation
+
+- Install the package via pip:
+
+  `pip install ambient-toolbox`
+
+  or via pipenv:
+
+  `pipenv install ambient-toolbox`
+
+- Add module to `INSTALLED_APPS` within the main django `settings.py`:
+
+```python
+INSTALLED_APPS = (
+    # ...
+    "ambient_toolbox",
+)
+```
+
+- Apply migrations by running:
+
+  `python ./manage.py migrate`
+
+### Publish to ReadTheDocs.io
+
+- Fetch the latest changes in GitHub mirror and push them
+- Trigger new build at ReadTheDocs.io (follow instructions in admin panel at RTD) if the GitHub webhook is not yet set
+  up.
+
+### Publish to PyPi
+
+- Update documentation about new/changed functionality
+
+- Update the `Changelog`
+
+- Increment version in main `__init__.py`
+
+- Create pull request / merge to master
+
+- This project uses the flit package to publish to PyPI. Thus, publishing should be as easy as running:
+  ```
+  flit publish
+  ```
+
+  To publish to TestPyPI use the following to ensure that you have set up your .pypirc as
+  shown [here](https://flit.readthedocs.io/en/latest/upload.html#using-pypirc) and use the following command:
+
+  ```
+  flit publish --repository testpypi
+  ```
+
+### Maintenance
+
+Please note that this package supports the [ambient-package-update](https://pypi.org/project/ambient-package-update/).
+So you don't have to worry about the maintenance of this package. This updater is rendering all important
+configuration and setup files. It works similar to well-known updaters like `pyupgrade` or `django-upgrade`.
+
+To run an update, refer to the [documentation page](https://pypi.org/project/ambient-package-update/)
+of the "ambient-package-update".
+

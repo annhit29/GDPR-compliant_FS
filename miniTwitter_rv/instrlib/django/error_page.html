@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Error Page</title>
+</head>
+<body>
+    <h1>An error occurred</h1>
+    <p>The following events are supressed:</p>
+    {% for key, value in error_details.items %}
+        <li>{{ key }}: {{ value }}</li>
+    {% endfor %}
+    {% for key, value in error_args.items %}
+        <li>{{ key }}: {{ value }}</li>
+    {% endfor %}
+</body>
+</html>

@@ -1,0 +1,1 @@
+ALWAYS (FORALL u. Use(u, "marketing") IMPLIES ((NOT Revoke(u, "marketing")) SINCE (Consent(u, "marketing"))))

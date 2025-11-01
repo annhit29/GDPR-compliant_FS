@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% load bootstrap %}
+{% block title %}Welcome To Simplified Twitter{% endblock %}
+{% block content %}
+    <section id="tweets" class="container">
+        <div class="row-fluid">
+            <div class="span8">
+                <div class="blog">
+                    <form method="post" id="twit-post" class="center" action="{% url 'post_twit' %}">                        
+                        <fieldset>
+                            {{ post_form|bootstrap }}
+                            <input type="submit" class="btn btn-success pull-right" value="Submit">
+                            {% csrf_token %}
+                        </fieldset>
+                    </form>
+                    {% for twit in twits %}
+                        <div class="blog-item well">
+                            <p>{{ twit.content }}</p>
+                            <div class="blog-meta clearfix">
+                                <p class="pull-left">
+                                    <i class="icon-user"></i> by <a href="#">{{ twit.author }}</a>&nbsp;
+                                    <i class="icon-calendar"></i> {{twit.posted_on}}
+                                </p>
+                            </div>
+
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <aside class="span4" style="margin-bottom: 20px;">
+                <a href="/search/user">Follow someone</a>
+            </aside>
+            <aside class="span4">
+	      <div class="advertisement">
+                <h4>Advertisement</h4>
+                {{ advertisement|safe }}
+              </div>
+            </aside>
+        </div>
+    </section>
+    <style>
+        #twit-post label{
+            display: none;
+        }
+        #twit-post input[type='text']{
+            width:95%;
+        }
+        aside{
+            border: 1px solid red;
+            padding: 10px;
+        }
+        i{margin-right: 5px}
+    </style>
+{% endblock %}

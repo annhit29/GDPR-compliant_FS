@@ -1,0 +1,17 @@
+<div id="special-actions">
+    {% if accepted_cookie %}
+    <form method="post" action="{% url 'set_cookie_consent' %}">
+        {% csrf_token %}
+        <button type="submit" name="decline" value="true" class="btn btn-link">Revoke consent for marketing</button>
+        <input type="hidden" name="next" value="{{ request.path }}"> | 
+        <a href="{% url 'delete' %}?next={{ request.path }}" class="ms-2 btn btn-link">Delete My Data</a>
+    </form>
+    {% else %}
+    <form method="post" action="{% url 'set_cookie_consent' %}">
+        {% csrf_token %}
+        <button type="submit" name="accept" value="true" class="btn btn-link">Give consent for marketing</button>
+        <input type="hidden" name="next" value="{{ request.path }}"> | 
+        <a href="{% url 'delete' %}?next={{ request.path }}" class="ms-2 btn btn-link">Delete My Data</a>
+    </form>
+    {% endif %}
+</div>

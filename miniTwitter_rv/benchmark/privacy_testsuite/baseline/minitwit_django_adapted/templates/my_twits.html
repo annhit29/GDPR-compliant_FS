@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+    {% for twit in twit_list %}
+        <div class="blog-item well">
+            <p>{{ twit.content }}</p>
+            <div class="blog-meta clearfix">
+                <p class="pull-left">
+                    <i class="icon-user"></i> by <a href="#">{{ twit.author }}</a>
+                    <i class="icon-calendar"></i> {{  twit.updated_on }}
+                    <i class="icon-pencil"></i><a href="{% url 'edit_twit' twit.pk %}">Edit</a>
+                    <i class="icon-trash"></i><a href="{% url 'delete_twit' twit.pk %}">Delete</a>
+                </p>
+            </div>
+        </div>
+    {% endfor %}
+{% endblock %}

@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+
+{% block title %}Statistics{% endblock %}
+
+{% block content %}
+    <div style="margin-left: 50px;"> <!-- Adjust the 50px value as needed -->
+        <h1>Statistics</h1>
+        <div class="blog-item well" style="width: 80%">
+            <p>Total Users: {{ total_users }}</p>
+            <p>Total Twits: {{ total_twits }}</p>
+        </div>
+
+        <div id="detailedStats" style="display: none;">
+            <h2>Top Users</h2>
+            {% for user in top_users %}
+                <div class="blog-item well" style="width: 80%">
+                    <p>{{ user.username }}: {{ user.twit_count }} twits</p>
+                    <p>fistname: {{ user.first_name }} lastname: {{ user.last_name }}</p>
+                    <div class="blog-meta clearfix">                        
+                        <p class="pull-left">
+                            <i class="icon-user"></i> by <a href="#">{{ user.username }}</a>
+                            <i class="icon-calendar"></i> Joined on {{ user.date_joined }}
+                        </p>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <div id="basicStats" style="display: none;">
+            <p>Accept cookies to see more detailed statistics.</p>
+        </div>
+
+        <script>
+            function showDetailedStats() {
+                document.getElementById('detailedStats').style.display = 'block';
+                document.getElementById('basicStats').style.display = 'none';
+            }
+
+            function showBasicStats() {
+                document.getElementById('detailedStats').style.display = 'none';
+                document.getElementById('basicStats').style.display = 'block';
+            }
+
+            // Call the appropriate function based on cookie consent
+            if ('{{ show_detailed }}' === 'True') {
+                showDetailedStats();
+            } else {
+                showBasicStats();
+            }
+        </script>
+    </div>
+{% endblock %}

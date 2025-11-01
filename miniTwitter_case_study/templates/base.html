@@ -1,0 +1,106 @@
+{% load  static %}
+
+<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js"> <!--<![endif]-->
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <title>{% block title %}{% endblock %}</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet" href="{% static "css/bootstrap.min.css" %}">
+    <link rel="stylesheet" href="{% static "css/bootstrap-responsive.min.css" %}">
+    <link rel="stylesheet" href="{%static "css/font-awesome.min.css" %}">
+    <link rel="stylesheet" href="{%static "css/main.css" %}">
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"></script>
+  
+</head>
+
+<body>
+
+{% block header %}
+    <!--Header-->
+    <header class="navbar navbar-fixed-top">
+        <div class="navbar-inner">
+            <div class="container">
+                <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                    <span class="icon-bar"></span>
+                </a>
+                <a id="logo" class="pull-left" href="/">MiniTwitter</a>
+                <form class="pull-left" style="margin-top: 10px;margin-bottom: 0;" action="/search/twit" method="get">
+                    <input type="text" name="q" placeholder="Search ...">
+                    <button type="submit" style="margin-top: -10px" class="btn btn-primary"><i class="icon
+                    icon-search"></i></button>
+                </form>
+                <div class="nav-collapse collapse pull-right">
+                    <ul class="nav">
+                        <li><a href="/">Home</a></li>
+                        {% if not request.user.is_authenticated %}
+                            <li><a  href="{% url 'login' %}">Login</a></li>
+                        {% else %}
+                            <li><a  href="{% url 'follow_user' %}">Follow</a></li>
+                            <li><a  href="{% url 'following_list' %}">Following</a></li>
+                            <li><a  href="{% url 'my_twits' %}">My Twits</a></li>
+                            <li><a  href="{% url 'logout' %}">Logout</a></li>
+                        {% endif %}
+                    </ul>
+                </div><!--/.nav-collapse -->
+            </div>
+        </div>
+    </header>
+    <!-- /header -->
+{% endblock %}
+<!--Slider-->
+<section>
+    {% block content%}
+        I am middle body
+    {% endblock %}
+</section>
+
+<!--/bottom-->
+{% block footer %}
+    <footer id="footer">
+        <div class="container">
+            <div class="row-fluid">
+                <div class="span5 cp">
+                    &copy; 2013 <a target="_blank" href="http://shapebootstrap.net/" title="Free Twitter Bootstrap WordPress Themes and HTML templates">ShapeBootstrap</a>. All Rights Reserved.
+                </div>
+                <!--/Copyright-->
+
+                <div class="span6">
+                    <ul class="social pull-right">
+                        <li><a href="#"><i class="icon-facebook"></i></a></li>
+                        <li><a href="#"><i class="icon-twitter"></i></a></li>
+                        <li><a href="#"><i class="icon-pinterest"></i></a></li>
+                        <li><a href="#"><i class="icon-linkedin"></i></a></li>
+                        <li><a href="#"><i class="icon-google-plus"></i></a></li>
+                        <li><a href="#"><i class="icon-youtube"></i></a></li>
+                        <li><a href="#"><i class="icon-tumblr"></i></a></li>
+                        <li><a href="#"><i class="icon-dribbble"></i></a></li>
+                        <li><a href="#"><i class="icon-rss"></i></a></li>
+                        <li><a href="#"><i class="icon-github-alt"></i></a></li>
+                        <li><a href="#"><i class="icon-instagram"></i></a></li>
+                    </ul>
+                </div>
+
+                <div class="span1">
+                    <a id="gototop" class="gototop pull-right" href="#"><i class="icon-angle-up"></i></a>
+                </div>
+                <!--/Goto Top-->
+            </div>
+        </div>
+    </footer>
+{% endblock %}
+
+{% include 'cookie_banner.html' %}
+
+
+</body>
+</html>

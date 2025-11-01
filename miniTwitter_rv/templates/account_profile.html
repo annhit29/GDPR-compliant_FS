@@ -1,0 +1,12 @@
+{% extends 'base.html' %}
+{% block content %}
+    <div style="margin: 0 auto; max-width: 400px">
+        <p>User Details</p>
+        <ul>
+            <li>First Name: {{ user.first_name }}</li>
+            <li>Last Name: {{ user.last_name }}</li>
+            <li>Username: {{ user.username }}</li>
+        </ul>
+    </div>
+
+{% endblock %}

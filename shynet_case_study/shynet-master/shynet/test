@@ -1,0 +1,2 @@
+@2 write("Session", "ip", "f08ca5fd-82fc-4bbb-9471-6ad452dff26e", "None", "Test", "f08ca5fd-82fc-4bbb-9471-6ad452dff26e", "service");
+@2 read("Session", "ip", "f08ca5fd-82fc-4bbb-9471-6ad452dff26e", "None", "f08ca5fd-82fc-4bbb-9471-6ad452dff26e", "service");

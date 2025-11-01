@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% load bootstrap %}
+{% block content %}
+    <form method="post" id="twit-post" class="center" action="{% url 'edit_twit' form.instance.pk %}/">
+        <fieldset>
+            {{ form|bootstrap }}
+            <input type="submit" class="btn btn-success pull-right" value="Submit">
+            {% csrf_token %}
+        </fieldset>
+    </form>
+{% endblock %}

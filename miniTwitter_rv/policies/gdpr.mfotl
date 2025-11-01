@@ -1,0 +1,1 @@
+ALWAYS (FORALL u. (Request(u) IMPLIES EVENTUALLY[0,5] Delete(u)) AND (Use(u, "marketing") IMPLIES ((NOT Revoke(u, "marketing")) SINCE (Consent(u, "marketing")))))

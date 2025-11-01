@@ -1,0 +1,9 @@
+*.pyc
+env
+db.sqlite3
+__pycache__/
+log
+db.sqlite
+logs/
+output/
+plots/

@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+{% block title %}Delete My Data{% endblock %}
+{% block content %}
+<form method="post" action="{% url 'delete' %}">
+    {% csrf_token %}
+    <p>Are you sure you want to delete all your data?</p>
+    <button type="submit" name="delete" value="true">Yes</button>
+    <button type="submit" name="decline" value="true">No, bring me back home</button>
+    <input type="hidden" name="next" value="{{ next }}">
+</form>
+{% endblock %}

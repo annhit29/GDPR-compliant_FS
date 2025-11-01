@@ -1,0 +1,11 @@
+{% if show_cookie_banner %}
+<div id="cookie-banner" style="position: fixed; bottom: 0; width: 100%; background-color: #f1f1f1; padding: 20px; text-align: center;">
+    <form method="post" action="{% url 'set_cookie_consent' %}">
+        {% csrf_token %}
+        <p>This website uses cookies to ensure you get the best experience on our website.</p>
+        <button type="submit" name="accept" value="true">Accept</button>
+        <button type="submit" name="decline" value="true">Decline</button>
+        <input type="hidden" name="next" value="{{ request.path }}">
+    </form>
+</div>
+{% endif %}

@@ -1,0 +1,43 @@
+"""Twitter URL Configuration
+
+The `urlpatterns` list routes URLs to views. For more information please see:
+    https://docs.djangoproject.com/en/1.9/topics/http/urls/
+Examples:
+Function views
+    1. Add an import:  from my_app import views
+    2. Add a URL to urlpatterns:  url(r'^$', views.home, name='home')
+Class-based views
+    1. Add an import:  from other_app.views import Home
+    2. Add a URL to urlpatterns:  url(r'^$', Home.as_view(), name='home')
+Including another URLconf
+    1. Import the include() function: from django.conf.urls import url, include
+    2. Add a URL to urlpatterns:  url(r'^blog/', include('blog.urls'))
+"""
+from django.urls import path, include
+from django.contrib import admin
+
+from instrlib.django.url import InstrumentURL
+from twitt.enforcer import logger
+
+urlpatterns = [ 
+    path('admin/', admin.site.urls),
+    path('', include('twitt.urls')),
+]
+
+to_instrument = {
+    "twitt.views.AccountProfileView", 
+    "django.contrib.auth.views.LoginView",
+    "twitt.views.SignUpView",
+    "twitt.views.custom_logout",
+    "twitt.views.MyTwitsView",
+    "twitt.views.PostTwitView",
+    "twitt.views.FollowListView",
+    "twitt.views.EditTwitView",
+    "twitt.views.FollowUserView",
+    "twitt.views.HomeView",
+    "haystack.views.SearchView",
+    "twitt.views.delete_twit",
+    "twitt.views.SetCookieConsentView"
+}
+
+urlpatterns = InstrumentURL(logger, to_instrument, events = {'input'})(urlpatterns)

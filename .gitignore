@@ -1,0 +1,13 @@
+*.pyc
+env/
+__pycache__/
+log
+db.sqlite3
+logs/
+output/
+*~
+migrations/
+logs/
+.DS_Store
+.venv
+.vscode
