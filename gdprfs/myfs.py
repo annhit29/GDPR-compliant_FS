@@ -308,7 +308,7 @@ class MyFS(Fuse):
                 update_file_mapping_for_upper(str(p.resolve()), context="write")
                 update_file_metadata(str(p.resolve()), "write")
                 
-                self._emit_collect_event(path)
+                self._emit_collect_event(path) # solves the issue of no Collect event for direct writes ending with numbers
             except Exception as e:
                 print(f"[DB] Warn: mapping update failed for {p}: {e}")
         else:
