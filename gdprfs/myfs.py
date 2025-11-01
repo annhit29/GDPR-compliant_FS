@@ -299,14 +299,16 @@ class MyFS(Fuse):
         # Write to the real upper file
         with open(p, "r+b" if p.exists() else "wb") as f:
             f.seek(offset)
-            f.write(data)
-            f.flush()
+            f.write(data) # data written into the real file in /upper
+            f.flush() # flush to disk
 
         # --- skip temp files ---
         if not _is_temp_name(path):
             try:
                 update_file_mapping_for_upper(str(p.resolve()), context="write")
                 update_file_metadata(str(p.resolve()), "write")
+                
+                self._emit_collect_event(path)
             except Exception as e:
                 print(f"[DB] Warn: mapping update failed for {p}: {e}")
         else:
@@ -319,6 +321,18 @@ class MyFS(Fuse):
         # update_file_mapping_for_upper(str(p.resolve()), context="write")
 
         return len(data) # Returning len(data) tells FUSE “OK, I wrote everything.”
+
+    def _emit_collect_event(self, path: str):
+        """Emit a GDPR Collect event for a file when a write happens but no Collect event is triggered."""
+        try:
+            fid, _ = _get_file_and_user(_upper(path))
+            fid = fid or f"unknown-{os.path.basename(path)}"
+            evt = Event('Collect', fid, 'marketing')
+            logger.log([evt], threading.Event(), False)
+            print(f"[GDPR] Fallback Collect event emitted for {path}")
+        except Exception as e:
+            print(f"[GDPR] Warning: failed to emit Collect event for {path}: {e}")
+
 
     def getattr(self, path): #v
         # print("in getattr")
@@ -500,10 +514,7 @@ class MyFS(Fuse):
                 # print(f"[DB] Updated mapping for final save {new}")
 
                 # Emit the GDPR Collect event for the real file
-                fid, uid = _get_file_and_user(_upper(new))
-                fid = fid or f"unknown-{os.path.basename(new)}"
-                evt = Event('Collect', fid, 'marketing')
-                logger.log([evt], threading.Event(), False)
+                self._emit_collect_event(new)
                 print(f"[GDPR] Sent Collect event for final file {new} via Logger.log()")
 
             else:
