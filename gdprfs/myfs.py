@@ -157,8 +157,6 @@ def events_for_read(path):
         userids = ["anonymous"]
     return [Event('Use', fid, 'marketing', uid) for uid in userids]
 
-    # return [Event('Use', fid, 'marketing', uid)]
-
 # ========== SCHEMA ==========
 schema = Schema()
 schema.add('Use', [str, str, str]) # for reads
@@ -392,9 +390,13 @@ class MyFS(Fuse):
         raise OSError(ENOENT, "No such file or directory")
 
     def open(self, path, flags):
+        print("in open")
         # allow access if the path exists in /upper
         # print(f"[DEBUG open] called with path={path}, flags={flags}", flush=True)
-        if _upper(path).exists():
+        p = _upper(path)
+        if p.exists():
+            update_file_mapping_for_upper(str(p.resolve()), context="open")
+            update_file_metadata(str(p.resolve()), "open")
             return 0
         from errno import ENOENT
         raise OSError(ENOENT, "No such file or directory")

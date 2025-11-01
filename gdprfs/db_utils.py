@@ -60,21 +60,37 @@ def update_file_metadata(file_path: str, last_action: str):
         print(f"[DB] Updated metadata for {p.name} (last_action={last_action})")
 
 def mark_file_deleted(file_path: str):
-    """Mark a file as deleted in the database."""
+    """Completely remove the file entry from the database when it's deleted in /upper."""
     from gdprfs.models import File
     p = Path(file_path)
     file_id = p.name
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with Session() as session:
         f = session.query(File).filter_by(file_id=file_id).first()
         if f:
-            f.deleted = 1 # mark as deleted with the deleted flag
-            f.last_action = "delete"
-            f.modified_at = now
-            f.accessed_at = now
+            session.delete(f)
             session.commit()
-            print(f"[DB] Marked {file_id} as deleted at {now}")
+            print(f"[DB] Deleted DB record for {file_id}")
+
+# def mark_file_deleted(file_path: str):
+#     """
+#     For auditability: GDPR-style “soft delete”
+#     Mark a file as deleted in the database.
+#     """
+#     from gdprfs.models import File
+#     p = Path(file_path)
+#     file_id = p.name
+#     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+#     with Session() as session:
+#         f = session.query(File).filter_by(file_id=file_id).first()
+#         if f:
+#             f.deleted = 1 # mark as deleted with the deleted flag
+#             f.last_action = "delete"
+#             f.modified_at = now
+#             f.accessed_at = now
+#             session.commit()
+#             print(f"[DB] Marked {file_id} as deleted at {now}")
 
 def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", old_name: str = None):
     """
