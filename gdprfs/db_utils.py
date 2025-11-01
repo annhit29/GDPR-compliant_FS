@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 
 def _is_temp_name(fuse_path: str) -> bool:
+    print("in _is_temp_name")
     """Detect temporary filenames created by editors (e.g., gedit)."""
     name = os.path.basename(fuse_path)
     return (

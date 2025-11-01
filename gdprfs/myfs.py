@@ -82,20 +82,6 @@ def _delete_from_mirror(fuse_path: str):
     if dst.exists():
         dst.unlink()
 
-# def _get_file_and_user(path: str):
-#     """Return (file_id, user_id_string) for the file at path, if any."""
-#     with Session() as session:
-#         file_obj = session.query(File).filter(File.abs_path == str(Path(path).resolve())).first()
-#         if not file_obj:
-#             return None, None
-
-#         # Get one associated person (or None if none linked)
-#         person = file_obj.people[0] if file_obj.people else None
-#         user_id = None
-#         if person:
-#             user_id = f"{person.first_name} {person.last_name}"  # or str(person.id)
-#         return file_obj.file_id, user_id
-
 def _get_file_and_user(path: str):
     """Return (file_id, user_id_string) for the file at path, if any."""
     with Session() as session:
@@ -318,13 +304,14 @@ class MyFS(Fuse):
 
         return len(data) # Returning len(data) tells FUSE “OK, I wrote everything.”
 
-    def getattr(self, path):
+    def getattr(self, path): #v
+        print("in getattr")
         """
         Return the attributes of a file or directory.
         (e.g. size, permissions, owner, timestamps)
         Called whenever Linux does 'ls', 'stat', etc.
         """
-        # print(f"[DEBUG getattr] called with path={path}", flush=True)
+        print(f"[DEBUG getattr] called with path={path}", flush=True)
 
         from fuse import Stat
         from errno import ENOENT
@@ -333,6 +320,11 @@ class MyFS(Fuse):
         real_path = _upper(path)
 
         if not real_path.exists():
+            print("ghost file")
+            '''
+            These ghost files are simply there coz the FS is asking if these ghost filenames exist in the FS, not because it's creating them.
+            They only show up in the logs since each “Does this file exist?” question triggers a check inside the FUSE filesystem.
+            '''
             raise OSError(ENOENT, "No such file or directory")
 
         # Get the actual file info from disk
@@ -349,10 +341,10 @@ class MyFS(Fuse):
         st.st_mtime = int(s.st_mtime)  # modification time
         st.st_ctime = int(s.st_ctime)  # change/creation time
 
-        # print(f"st", st)
         return st
 
-    def readdir(self, path, offset):
+    def readdir(self, path, offset): #v
+        print("in readdir")
         """
         (awscli-venv) ann20010929@ann20010929-ThinkPad-P16s-Gen-3:~/MA3/Building_a_GDPR-compliant_file_system/instrlib$ ls -la /tmp/mnt
         total 25
@@ -390,7 +382,7 @@ class MyFS(Fuse):
         raise OSError(ENOENT, "No such file or directory")
 
     def read(self, path, size, offset, fh=None):
-        # print("read file")
+        print("read file")
     
         # detect misrouted write()
         # so mimic FUSE def write()
@@ -405,8 +397,8 @@ class MyFS(Fuse):
 
         # return only the requested slice, as bytes
         with open(p, "rb") as f: # the file is being read from p i.e. from /upper 
+            print("opened file for reading")
             f.seek(offset)
-            # return f.read(size)
             print(f"size: {size}")
             data = f.read(size)
         print(f"[READ] path={path} reading from {p}, {len(data)} bytes, size={size}, offset={offset}, returning={data}")
@@ -555,4 +547,6 @@ if __name__ == "__main__":
     
     fs = MyFS()
     fs.parse()              # parse FUSE args
+    import gc
+    gc.collect() # clean up the memory (eg: files already deleted for a very long time) before mounting
     fs.main()               # enter service loop
