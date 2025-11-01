@@ -22,7 +22,7 @@ class File(Base):
     #todo: last or all, à voir
     last_action = Column(String) # "read", "write", "rename", etc.
 
-    deleted = Column(Integer, default=0) # 0 = file exists aka not deleted, 1 = file deleted
+    # deleted = Column(Integer, default=0) # 0 = file exists aka not deleted, 1 = file deleted # for soft delete
 
     people = relationship("Person", secondary=person_file_map, back_populates="files")
 
