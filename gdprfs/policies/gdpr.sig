@@ -1,7 +1,7 @@
-Use(fid:string, p:string)-
-Consent(fid:string, p:string)
-Revoke(fid:string, p:string)
-Request(fid:string)
-Delete(fid:string)+
-Erase(fid:string)
-Collect(fid:string,p:string)
+Use(u:string, p:string)-
+Consent(u:string, p:string)
+Revoke(u:string, p:string)
+Request(u:string)
+Delete(u:string)+
+Erase(u:string)
+Collect(u:string,p:string)
