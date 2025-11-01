@@ -82,6 +82,21 @@ def _delete_from_mirror(fuse_path: str):
     if dst.exists():
         dst.unlink()
 
+# import psutil
+
+# IGNORED = {"nautilus", "gio", "tracker-miner-fs", "gvfsd-metadata", "tumblerd"}
+
+# def _should_ignore():
+#     try:
+#         for proc in psutil.Process().parents():
+#             print(f"[DEBUG] Parent process: {proc.name()} (pid={proc.pid})")
+#             if proc.name() in IGNORED:
+#                 print(f"[DEBUG] Ignoring system read from {proc.name()}")
+#                 return True
+#     except Exception:
+#         print(f"[DEBUG] psutil failed: {e}")
+#     return False
+
 def _get_file_and_user(path: str):
     """Return (file_id, user_id_string) for the file at path, if any."""
     with Session() as session:
@@ -124,7 +139,10 @@ def events_for_path(path: str, event_type: str):
 def events_for_read(path):
     """Return appropriate events for read(), skip .goutputstream temporary files."""
     base = os.path.basename(path)
-    
+
+    # if _should_ignore():
+    #     print(f"[DEBUG] Ignoring read from system process for {base}")
+    #     return []
     # Case 1: temporary gedit files (.goutputstream-XXXX)
     if base.startswith(".goutputstream-"):
         # print(f"[DEBUG] Skipping Collect for temporary file: {path}")
@@ -305,13 +323,13 @@ class MyFS(Fuse):
         return len(data) # Returning len(data) tells FUSE “OK, I wrote everything.”
 
     def getattr(self, path): #v
-        print("in getattr")
+        # print("in getattr")
         """
         Return the attributes of a file or directory.
         (e.g. size, permissions, owner, timestamps)
         Called whenever Linux does 'ls', 'stat', etc.
         """
-        print(f"[DEBUG getattr] called with path={path}", flush=True)
+        # print(f"[DEBUG getattr] called with path={path}", flush=True)
 
         from fuse import Stat
         from errno import ENOENT
@@ -320,7 +338,7 @@ class MyFS(Fuse):
         real_path = _upper(path)
 
         if not real_path.exists():
-            print("ghost file")
+            # print("ghost file")
             '''
             These ghost files are simply there coz the FS is asking if these ghost filenames exist in the FS, not because it's creating them.
             They only show up in the logs since each “Does this file exist?” question triggers a check inside the FUSE filesystem.
@@ -384,6 +402,11 @@ class MyFS(Fuse):
     def read(self, path, size, offset, fh=None):
         print("read file")
     
+        # if _should_ignore():
+        #     # Don’t trigger Use event or log DB update
+        #     with open(_upper(path), "rb") as f:
+        #         f.seek(offset)
+        #         return f.read(size)
         # detect misrouted write()
         # so mimic FUSE def write()
         if isinstance(size, (bytes, bytearray)): #if size is data instead of int
