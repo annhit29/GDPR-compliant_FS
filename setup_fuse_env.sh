@@ -46,4 +46,25 @@ python3 -c "import sqlalchemy; print('✅ SQLAlchemy imported successfully, vers
 echo "---🔹 SQLAlchemy package details:---"
 pip show sqlalchemy
 
+# echo "[GDPRFS] Checking Python dependency: psutil..."
+# if ! python3 -c "import psutil" &>/dev/null; then
+#     echo "📦 Installing psutil..."
+#     sudo apt update -y && sudo apt install -y python3-psutil
+# else
+#     echo "✅ psutil already installed."
+# fi
+
+# Flask (werkzeug is automatically included) + dependencies
+echo "🔹 Installing Flask + Requests in the virtual environment..."
+pip install flask requests 
+
+echo "Verifying Flask installation..."
+python3 -c "import flask; import requests; print('✅ Flask version:', flask.__version__)"
+
+echo "🔹 Installing Flask-SQLAlchemy in the virtual environment..."
+pip install flask_sqlalchemy
+
+echo "Verifying Flask-SQLAlchemy installation..."
+python3 -c "import importlib.metadata; print('✅ Flask-SQLAlchemy version:', importlib.metadata.version('flask-sqlalchemy'))"
+
 echo "🎉 Setup complete!"

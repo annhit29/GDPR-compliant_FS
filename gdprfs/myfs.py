@@ -585,4 +585,17 @@ if __name__ == "__main__":
     fs.parse()              # parse FUSE args
     import gc
     gc.collect() # clean up the memory (eg: files already deleted for a very long time) before mounting
+    
+    import subprocess # so the poller runs independently of the FUSE main loop, i.e. one daemon for FUSE, one daemon for poller
+    def start_consent_poller():
+        try:
+            subprocess.Popen(
+                ["python3", "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform/poller.py"]#,
+                # stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
+            )
+            print("[INIT] Consent poller started in background.") # means this FS successfully launched the poller daemon via subprocess.Popen().
+        except Exception as e:
+            print(f"[INIT] Warning: failed to start poller: {e}")
+
+    start_consent_poller()  # start the consent poller in the background
     fs.main()               # enter service loop

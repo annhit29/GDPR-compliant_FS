@@ -139,8 +139,6 @@ def events_for_read(path):
         userids = ["anonymous"]
     return [Event('Use', fid, 'marketing', uid) for uid in userids]
 
-    # return [Event('Use', fid, 'marketing', uid)]
-
 # ========== SCHEMA ==========
 schema = Schema()
 schema.add('Use', [str, str, str]) # for reads
