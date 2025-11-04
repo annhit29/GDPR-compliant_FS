@@ -12,7 +12,7 @@
 <body>
   <h2>Data Subject Portal</h2>
   <form method="post" action="{{ url_for('submit') }}">
-    <input name="uid" placeholder="User ID" required>
+    <input name="uid" placeholder="User full name" required>
     <select name="purpose">
       <option>service</option><option>analytics</option><option>marketing</option>
     </select>
@@ -22,7 +22,7 @@
 
   <h3>Recent Events</h3>
   <table>
-    <tr><th>Kind</th><th>UID</th><th>Purpose</th><th>Status</th></tr>
+    <tr><th>Kind</th><th>User full name</th><th>Purpose</th><th>Status</th></tr>
     {% for e in events %}
     <tr><td>{{ e.kind }}</td><td>{{ e.uid }}</td><td>{{ e.purpose }}</td><td>{{ e.status }}</td></tr>
     {% endfor %}
@@ -30,7 +30,7 @@
 
   <h3>Current States</h3>
   <table>
-    <tr><th>UID</th><th>Purpose</th><th>Status</th></tr>
+    <tr><th>User full name</th><th>Purpose</th><th>Status</th></tr>
     {% for s in states %}
     <tr><td>{{ s.uid }}</td><td>{{ s.purpose }}</td><td>{{ s.status }}</td></tr>
     {% endfor %}
