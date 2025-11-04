@@ -162,14 +162,14 @@ schema = Schema()
 schema.add('Use', [str, str, str]) # for reads
 schema.add('Collect', [str, str]) # for writes
 schema.add('Erase', [str]) # for the erase of a file
-# schema.add('Consent', [str, str]) # for consent events
-# schema.add('Revoke', [str, str]) # for revoke consent events
+schema.add('Consent', [str, str]) # for consent events
+schema.add('Revoke', [str, str]) # for revoke consent events
 
 # ========== HANDLERS ==========
 def none_handler(event_name, event_args, response, *args, **kwargs):
     """
     Python side  =/= Enforcer side
-    The none_handler means "do nothing" in the python side (if I wanna return or print sthon the terminal).
+    The none_handler means "do nothing" in the python side (if I wanna return or print sth on the terminal).
     and the enforcer is actually suppressing or causing a file operation.
     """
     return None
@@ -179,8 +179,9 @@ suppression_handlers = {
     ('Use'): none_handler#,
     # ('Collect'): none_handler
 }
-causation_handlers = {('Erase'): none_handler#,
-                    #   ('Consent'): none_handler,
+causation_handlers = {('Erase'): none_handler,
+                      ('Consent'): none_handler,
+                        ('Revoke'): none_handler#,
                     #   ('Collect'): none_handler
                       }
 
@@ -254,6 +255,45 @@ pdp = EnfGuard(INSTRLIB_EXE, INSTRLIB_SIG, INSTRLIB_FORMULA, log_file=INSTRLIB_L
 logger = Logger(pep, schema, pdp)
 print("PEP mapping keys:", list(logger.pep.mapping.keys()))
 pdp.start_threads() # then start the EnfGuard enforcer + threads
+
+# --- Ingest HTTP server: receives Consent/Revoke from poller ---
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+
+def start_ingest_server(logger):
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            if self.path != "/ingest":
+                self.send_error(404); return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                payload = json.loads(self.rfile.read(length) or b"{}")
+                kind = str(payload.get("kind", "")).lower()
+                uid = payload.get("uid")
+                purpose = str(payload.get("purpose", "")).lower()
+
+                if kind not in ("consent", "revoke") or not uid or not purpose:
+                    self.send_error(400, "bad payload"); return
+
+                ev_name = "Consent" if kind == "consent" else "Revoke"
+                evt = Event(ev_name, uid, purpose)
+                logger.log([evt], threading.Event(), False)
+
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b'{"ok": true}')
+            except Exception as e:
+                self.send_error(500, str(e))
+
+        def log_message(self, *a, **kw):  # silence default HTTP logs
+            return
+
+    def serve():
+        HTTPServer(("127.0.0.1", 7000), Handler).serve_forever()
+
+    t = threading.Thread(target=serve, daemon=True)
+    t.start()
+    print("[INIT] Consent/Revoke ingest server at http://127.0.0.1:7000/ingest")
 
 class InstrumentNoAttr(Instrument):
     """
@@ -598,4 +638,5 @@ if __name__ == "__main__":
             print(f"[INIT] Warning: failed to start poller: {e}")
 
     start_consent_poller()  # start the consent poller in the background
+    start_ingest_server(logger) # start the ingest HTTP server for Consent/Revoke events
     fs.main()               # enter service loop

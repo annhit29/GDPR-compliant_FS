@@ -13,8 +13,16 @@ def poll_once():
     os.makedirs(os.path.dirname(TRACE), exist_ok=True) # extracts the directory path part /home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs and makes sure it exists
     with open(TRACE, "a", encoding="utf-8") as f: # opens the file gdprfstrace.log in append mode, or creates it first automatically if it doesn’t exist yet
         for e in events:
-            line = f"{e['created_at']}; {e['kind'].capitalize()}(uid={e['uid']}, p={e['purpose']})\n"
-            f.write(line)
+            # purpose = e["purpose"].lower()  # normalize purpose string
+            # line = f"{e['created_at']}; {e['kind'].capitalize()}(\"{e['uid']}\", \"{purpose}\")\n"
+            # line = f"{e['kind'].capitalize()}(\"{e['uid']}\", \"{purpose}\")\n"
+            # f.write(line) # log the event to the gdprfstrace.log file
+
+            # send it to the FS so the enforcer receives it live:
+            requests.post(
+                "http://127.0.0.1:7000/ingest",
+                json={"kind": e["kind"], "uid": e["uid"], "purpose": e["purpose"]}
+            )
             requests.patch(f"{BASE_URL}/api/events/{e['id']}/ack") # /ack tells the server we have received and logged this Consent/Revoke event which was pending, so it can be marked as acked = done.
             print(f"[Poller] ACKed event {e['id']} ({e['kind']} for {e['uid']}:{e['purpose']})")
     return len(events) # number of processed events
