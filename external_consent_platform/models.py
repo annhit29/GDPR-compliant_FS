@@ -6,9 +6,9 @@ db = SQLAlchemy()
 class Event(db.Model):
     __tablename__ = "events"
     event_id = db.Column(db.Integer, primary_key=True)
-    kind = db.Column(db.String(16), nullable=False)  # consent or revoke
+    kind = db.Column(db.String(16), nullable=False)  # Consent or Revoke
     uid = db.Column(db.String(128), nullable=False)
-    purpose = db.Column(db.String(128), nullable=False)
+    purpose = db.Column(db.String(128), nullable=False) # service, analytics, marketing, etc.
     status = db.Column(db.String(16), default="pending")  # pending or acked
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

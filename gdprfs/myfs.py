@@ -99,7 +99,7 @@ def _delete_from_mirror(fuse_path: str):
 
 def replay_from_consent_db(logger):
     """
-    On startup, all active Consent and Revoke events are re-injected into the enforcer, so that the enforcer has the latest consent/revoke state.
+    On startup, all active Consent and Revoke events are re-injected into the enforcer, so that the enforcer has the latest Consent/Revoke state.
     """
     import requests
     BASE_URL = "http://127.0.0.1:5000"
@@ -111,7 +111,7 @@ def replay_from_consent_db(logger):
 
         for row in rows:
             uid = row["uid"]
-            purpose = row["purpose"].lower() # normalize purpose string
+            purpose = row["purpose"]
             status = row["status"].lower()
             ev_name = "Consent" if status == "consented" else "Revoke"
             evt = Event(ev_name, uid, purpose)
@@ -291,14 +291,14 @@ def start_ingest_server(logger):
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
-                kind = str(payload.get("kind", "")).lower()
+                kind = str(payload.get("kind", ""))
                 uid = payload.get("uid")
-                purpose = str(payload.get("purpose", "")).lower()
+                purpose = str(payload.get("purpose", ""))
 
-                if kind not in ("consent", "revoke") or not uid or not purpose:
+                if kind not in ("Consent", "Revoke") or not uid or not purpose:
                     self.send_error(400, "bad payload"); return
 
-                ev_name = "Consent" if kind == "consent" else "Revoke" # must match the event capitalization, coz it's sent to the enforcer
+                ev_name = "Consent" if kind == "Consent" else "Revoke" # must match the event capitalization, coz it's sent to the enforcer
                 evt = Event(ev_name, uid, purpose)
                 logger.log([evt], threading.Event(), False)
 

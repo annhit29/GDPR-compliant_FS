@@ -30,7 +30,7 @@ def submit():
     db.session.add(e)
     db.session.commit()
 
-    status = "consented" if action == "consent" else "revoked" # it's in the Flask app, not sent to the enforcer, so no need to match the event capitalization
+    status = "consented" if action == "Consent" else "revoked" 
     s = CurrentEventState.query.filter_by(uid=uid, purpose=purpose).one_or_none()
     if s:
         s.status = status

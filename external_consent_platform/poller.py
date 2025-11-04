@@ -2,7 +2,7 @@ import requests, time, os
 
 BASE_URL = "http://127.0.0.1:5000"
 TRACE = "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs/gdprfstrace.log"
-INTERVAL = 6#600  # seconds
+INTERVAL = 60#600  # seconds
 
 def poll_once():
     events = requests.get(f"{BASE_URL}/api/events", params={"status": "pending"}).json()
