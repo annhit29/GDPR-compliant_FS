@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Internal Purpose Control Panel</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+    table { border-collapse: collapse; width: 100%; margin-top: 1em; }
+    td, th { border: 1px solid #ddd; padding: .4em; }
+  </style>
+</head>
+<body>
+  <h2>Internal User Interface</h2>
+  <form method="post" action="/start">
+    <input name="uid" placeholder="Employee full name" required>
+    <select name="purpose">
+      <option>service</option><option>analytics</option><option>marketing</option>
+    </select>
+    <input name="reason" placeholder="Reason" required>
+    <button type="submit">Start Session</button>
+  </form>
+
+  <form method="post" action="/stop" style="margin-top:8px;">
+    <input name="uid" placeholder="Employee full name" required>
+    <button type="submit">Stop Session</button>
+  </form>
+  
+  <h3>Recent Events</h3>
+  <table>
+    <tr><th>Kind</th><th>Employee full name</th><th>Purpose</th><th>Reason</th><th>Timestamp</th></tr>
+    {% for e in events %}
+    <tr><td>{{ e.kind }}</td><td>{{ e.uid }}</td><td>{{ e.purpose }}</td><td>{{ e.reason }}</td><td>{{ e.created_at }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h3>Current Sessions</h3>
+  <table>
+    <tr><th>Employee full name</th><th>Purpose</th><th>Reason</th><th>Active</th></tr>
+    {% for s in sessions %}
+    <tr><td>{{ s.uid }}</td><td>{{ s.purpose }}</td><td>{{ s.reason }}</td><td>{{ 'yes' if s.active else 'no' }}</td></tr>
+    {% endfor %}
+  </table>
+
+</body>
+</html>
