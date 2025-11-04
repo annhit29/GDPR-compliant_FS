@@ -97,6 +97,28 @@ def _delete_from_mirror(fuse_path: str):
 #         print(f"[DEBUG] psutil failed: {e}")
 #     return False
 
+def replay_from_consent_db(logger):
+    """
+    On startup, all active Consent and Revoke events are re-injected into the enforcer, so that the enforcer has the latest consent/revoke state.
+    """
+    import requests
+    BASE_URL = "http://127.0.0.1:5000"
+    try:
+        # Fetch all current consent states directly
+        res = requests.get(f"{BASE_URL}/api/consents")  # we'll extend API below
+        rows = res.json()
+        print(f"[INIT] Replaying {len(rows)} consent states into enforcer...")
+
+        for row in rows:
+            uid = row["uid"]
+            purpose = row["purpose"].lower() # normalize purpose string
+            status = row["status"].lower()
+            ev_name = "Consent" if status == "consented" else "Revoke"
+            evt = Event(ev_name, uid, purpose)
+            logger.log([evt], threading.Event(), False)
+    except Exception as e:
+        print(f"[INIT] Failed to replay consents from consent DB: {e}")
+
 def _get_file_and_user(path: str):
     """Return (file_id, user_id_string) for the file at path, if any."""
     with Session() as session:
@@ -255,6 +277,7 @@ pdp = EnfGuard(INSTRLIB_EXE, INSTRLIB_SIG, INSTRLIB_FORMULA, log_file=INSTRLIB_L
 logger = Logger(pep, schema, pdp)
 print("PEP mapping keys:", list(logger.pep.mapping.keys()))
 pdp.start_threads() # then start the EnfGuard enforcer + threads
+replay_from_consent_db(logger)
 
 # --- Ingest HTTP server: receives Consent/Revoke from poller ---
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -275,7 +298,7 @@ def start_ingest_server(logger):
                 if kind not in ("consent", "revoke") or not uid or not purpose:
                     self.send_error(400, "bad payload"); return
 
-                ev_name = "Consent" if kind == "consent" else "Revoke"
+                ev_name = "Consent" if kind == "consent" else "Revoke" # must match the event capitalization, coz it's sent to the enforcer
                 evt = Event(ev_name, uid, purpose)
                 logger.log([evt], threading.Event(), False)
 

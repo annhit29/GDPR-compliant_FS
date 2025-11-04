@@ -28,3 +28,8 @@ def get_consent(uid, purpose):
     if not row:
         return jsonify({"uid": uid, "purpose": purpose, "status": "unknown"})
     return jsonify(row.as_dict())
+
+@bp.route("/consents", methods=["GET"])
+def list_current_states():
+    rows = CurrentEventState.query.all()
+    return jsonify([r.as_dict() for r in rows])

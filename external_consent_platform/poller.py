@@ -13,11 +13,6 @@ def poll_once():
     os.makedirs(os.path.dirname(TRACE), exist_ok=True) # extracts the directory path part /home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs and makes sure it exists
     with open(TRACE, "a", encoding="utf-8") as f: # opens the file gdprfstrace.log in append mode, or creates it first automatically if it doesn’t exist yet
         for e in events:
-            # purpose = e["purpose"].lower()  # normalize purpose string
-            # line = f"{e['created_at']}; {e['kind'].capitalize()}(\"{e['uid']}\", \"{purpose}\")\n"
-            # line = f"{e['kind'].capitalize()}(\"{e['uid']}\", \"{purpose}\")\n"
-            # f.write(line) # log the event to the gdprfstrace.log file
-
             # send it to the FS so the enforcer receives it live:
             requests.post(
                 "http://127.0.0.1:7000/ingest",
