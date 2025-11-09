@@ -196,15 +196,12 @@ def none_handler(event_name, event_args, response, *args, **kwargs):
     """
     return None
 
-# suppression_handlers = {('Use'): none_handler}
-suppression_handlers = {
-    ('Use'): none_handler#,
-    # ('Collect'): none_handler
-}
+suppression_handlers = {('Use'): none_handler}
+
 causation_handlers = {('Erase'): none_handler,
                       ('Consent'): none_handler,
-                        ('Revoke'): none_handler#,
-                    #   ('Collect'): none_handler
+                        ('Revoke'): none_handler,
+                        ('Collect'): none_handler
                       }
 
 # ========== MAPPINGS ==========
@@ -291,15 +288,25 @@ def start_ingest_server(logger):
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
-                kind = str(payload.get("kind", ""))
+                kind = str(payload.get("kind", "")).strip()
                 uid = payload.get("uid")
-                purpose = str(payload.get("purpose", ""))
+                purpose = str(payload.get("purpose", "")).strip()
 
-                if kind not in ("Consent", "Revoke") or not uid or not purpose:
-                    self.send_error(400, "bad payload"); return
+                if not kind or not uid:
+                    self.send_error(400, "missing kind or uid")
+                    return
+                # Create a generic Event, supporting any kind
+                # If purpose missing, drop it automatically
+                if purpose:
+                    evt = Event(kind, uid, purpose)
+                else:
+                    evt = Event(kind, uid)
 
-                ev_name = "Consent" if kind == "Consent" else "Revoke" # must match the event capitalization, coz it's sent to the enforcer
-                evt = Event(ev_name, uid, purpose)
+                # if kind not in ("Consent", "Revoke") or not uid or not purpose:
+                    # self.send_error(400, "bad payload"); return
+
+                # ev_name = "Consent" if kind == "Consent" else "Revoke" # must match the event capitalization, coz it's sent to the enforcer
+                # evt = Event(ev_name, uid, purpose)
                 logger.log([evt], threading.Event(), False)
 
                 self.send_response(200)

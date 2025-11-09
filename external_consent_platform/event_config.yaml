@@ -1,0 +1,13 @@
+events:
+  - name: Consent
+    fields: [uid, purpose]
+    state_change: consented
+  - name: Revoke
+    fields: [uid, purpose]
+    state_change: revoked
+  - name: RequestAccess
+    fields: [uid]
+    state_change: access_requested
+  - name: RequestErasure
+    fields: [uid]
+    state_change: erasure_requested

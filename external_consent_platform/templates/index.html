@@ -13,11 +13,11 @@
   <h2>Data Subject Portal</h2>
   <form method="post" action="{{ url_for('submit') }}">
     <input name="uid" placeholder="User full name" required>
-    <select name="purpose">
-      <option>service</option><option>analytics</option><option>marketing</option>
-    </select>
-    <button name="action" value="Consent">Consent</button>
-    <button name="action" value="Revoke">Revoke</button>
+    <input name="purpose" placeholder="Purpose (if any)">
+
+    {% for event in event_config %}
+      <button name="action" value="{{ event.name }}">{{ event.name }}</button>
+    {% endfor %}
   </form>
 
   <h3>Recent Events</h3>
