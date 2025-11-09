@@ -13,8 +13,9 @@ from instrlib.event import Event, Functional
 import os, shutil
 from pathlib import Path
 from gdprfs.db_utils import update_file_mapping_for_upper, update_file_metadata, mark_file_deleted, _is_temp_name
-from gdprfs.models import File, Person
+from gdprfs.models import File
 from gdprfs.db_utils import Session
+import yaml
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
 UPPER_DIR  = Path("/var/lib/gdprfs/upper")
@@ -99,13 +100,20 @@ def _delete_from_mirror(fuse_path: str):
 
 def replay_from_consent_db(logger):
     """
-    On startup, all active Consent and Revoke events are re-injected into the enforcer, so that the enforcer has the latest Consent/Revoke state.
+    On startup, all active events are re-injected into the enforcer, so that the enforcer has the latest event states.
     """
     import requests
     BASE_URL = "http://127.0.0.1:5000"
+    CONFIG_PATH = "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform/event_config.yaml"
+
     try:
+        # Load event mapping from YAML
+        with open(CONFIG_PATH, "r") as f:
+            config = yaml.safe_load(f)
+        state_to_event = config.get("state_to_event", {})
+
         # Fetch all current consent states directly
-        res = requests.get(f"{BASE_URL}/api/consents")  # we'll extend API below
+        res = requests.get(f"{BASE_URL}/api/consents")
         rows = res.json()
         print(f"[INIT] Replaying {len(rows)} consent states into enforcer...")
 
@@ -113,9 +121,23 @@ def replay_from_consent_db(logger):
             uid = row["uid"]
             purpose = row["purpose"]
             status = row["status"].lower()
-            ev_name = "Consent" if status == "consented" else "Revoke"
-            evt = Event(ev_name, uid, purpose)
+
+            ev_name = state_to_event.get(status)
+
+            if not ev_name:
+                print(f"[INIT] Unknown status: {status}, skipping...")
+                continue
+
+            expected_nb_args = len(schema.mapping.get(ev_name, [])) # number of args expected for an event (triggered by data subjects) to take (2 for Consent/Revoke, 1 for RequestAccess/RequestErasure)
+
+            if expected_nb_args == 2: # if event has 2 args (e.g. Consent, Revoke)
+                evt = Event(ev_name, uid, purpose)
+            else:
+                evt = Event(ev_name, uid) # it's 1 arg (e.g. RequestAccess, RequestErasure)
+
             logger.log([evt], threading.Event(), False)
+        print("[INIT] Replay completed.")
+
     except Exception as e:
         print(f"[INIT] Failed to replay consents from consent DB: {e}")
 
@@ -138,7 +160,7 @@ def _get_file_and_user(path: str):
 def events_for_path(path: str, event_type: str):
     """
     Return a list of Event objects (possibly multiple if file has several owners).
-    event_type ∈ {'Use', 'Collect', 'Erase'}
+    event_type ∈ {'Use', 'Collect', 'Delete'}
     """
     fid, uid = _get_file_and_user(_upper(path))
     # Skip temporary names
@@ -152,8 +174,8 @@ def events_for_path(path: str, event_type: str):
         return [Event('Use', fid, 'marketing', uid)]
     elif event_type == 'Collect':
         return [Event('Collect', fid, 'marketing')]
-    elif event_type == 'Erase':
-        return [Event('Erase', fid)]
+    elif event_type == 'Delete':
+        return [Event('Delete', fid)]
     else:
         return []
 
@@ -182,10 +204,13 @@ def events_for_read(path):
 # ========== SCHEMA ==========
 schema = Schema()
 schema.add('Use', [str, str, str]) # for reads
+schema.add('Delete', [str])    # for deletes
 schema.add('Collect', [str, str]) # for writes
-schema.add('Erase', [str]) # for the erase of a file
 schema.add('Consent', [str, str]) # for consent events
 schema.add('Revoke', [str, str]) # for revoke consent events
+schema.add('RequestAccess', [str]) # request all DS data events from the FS
+schema.add('RequestErasure', [str]) # request erasure of all DS data events in the FS
+
 
 # ========== HANDLERS ==========
 def none_handler(event_name, event_args, response, *args, **kwargs):
@@ -198,10 +223,12 @@ def none_handler(event_name, event_args, response, *args, **kwargs):
 
 suppression_handlers = {('Use'): none_handler}
 
-causation_handlers = {('Erase'): none_handler,
+causation_handlers = {('Delete'): none_handler,
+                        ('Collect'): none_handler,
                       ('Consent'): none_handler,
                         ('Revoke'): none_handler,
-                        ('Collect'): none_handler
+                        ('RequestAccess'): none_handler,
+                        ('RequestErasure'): none_handler
                       }
 
 # ========== MAPPINGS ==========
@@ -215,7 +242,7 @@ def read_mapping(action):
     # return Event('Use', str(action), 'analytics')  # different purpose!
 
 def write_mapping(action): return Event('Collect', str(action), 'marketing')
-def unlink_mapping(action): return Event('Erase', str(action))
+def unlink_mapping(action): return Event('Delete', str(action))
 
 instrumentation_mapping = InstrumentationMapping({
     'read': read_mapping,
@@ -232,8 +259,6 @@ instrumentation_mapping = InstrumentationMapping({
 # })
 # ?
 
-
-
 # ========== PEP ==========
 
 pep = PEP(
@@ -247,26 +272,6 @@ pep = PEP(
     # instrumentation_mapping=instrumentation_mapping
     # todo: francois said use suppression_handlers, causation_handlers, and instrumentation_mapping, then no need mapping?? see miniTwitter_rv/twitt/enforcer.py
 )
-
-
-# pep = PEP(
-#     mapping={
-#         ('MyFS', 'read'): Functional(
-#     'Use',
-#     lambda path, *a, **kw:
-#         [Event('Collect', "14a-123", "marketing")] if os.path.basename(path).startswith(".goutputstream-") #“This operation isn’t part of any suppressible mapping; I'm letting it through, but no suppression logic applies.”
-#         else [Event('Use', "14a-123", "marketing", "userid1")]
-# ),
-#         # ('MyFS', 'read'): Functional('Use', lambda path, *a, **kw: [Event('Use', "14a-123", "marketing")]), 
-#         #todo: for the fileid, use the kw to find the file fid; o/w create a script for finding the file fid
-#         ('MyFS', 'write'): Functional('Collect', lambda path, *a, **kw: [Event('Collect', "14a-123", "marketing")]),
-#         # ('MyFS', 'unlink'): Functional('Erase', lambda path, *a, **kw: [Event('Erase', path)]),
-#     },
-#     suppression_handlers=suppression_handlers,
-#     causation_handlers=causation_handlers#,
-#     # instrumentation_mapping=instrumentation_mapping
-#     # todo: francois said use suppression_handlers, causation_handlers, and instrumentation_mapping, then no need mapping?? see miniTwitter_rv/twitt/enforcer.py
-# )
 
 pdp = EnfGuard(INSTRLIB_EXE, INSTRLIB_SIG, INSTRLIB_FORMULA, log_file=INSTRLIB_LOG)
 
@@ -301,12 +306,6 @@ def start_ingest_server(logger):
                     evt = Event(kind, uid, purpose)
                 else:
                     evt = Event(kind, uid)
-
-                # if kind not in ("Consent", "Revoke") or not uid or not purpose:
-                    # self.send_error(400, "bad payload"); return
-
-                # ev_name = "Consent" if kind == "Consent" else "Revoke" # must match the event capitalization, coz it's sent to the enforcer
-                # evt = Event(ev_name, uid, purpose)
                 logger.log([evt], threading.Event(), False)
 
                 self.send_response(200)
@@ -353,8 +352,6 @@ class InstrumentNoAttr(Instrument):
             return self.instrument_cls(target)
         return super().__call__(target)
 
-# @Instrument(logger) # Apply the Instrument decorator with our logger to MyFS
-# @Instrument(logger, skip_attr_overwrite=True) #<- not safe, coz monkey-patch
 @InstrumentNoAttr(logger)
 class MyFS(Fuse):
     """A minimal GDPR-compliant FUSE filesystem."""
@@ -652,7 +649,7 @@ if __name__ == "__main__":
         sys.exit(1)
     
     fs = MyFS()
-    fs.parse()              # parse FUSE args
+    fs.parse() # parse FUSE args
     import gc
     gc.collect() # clean up the memory (eg: files already deleted for a very long time) before mounting
     
@@ -661,12 +658,11 @@ if __name__ == "__main__":
         try:
             subprocess.Popen(
                 ["python3", "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform/poller.py"]#,
-                # stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT
             )
             print("[INIT] Consent poller started in background.") # means this FS successfully launched the poller daemon via subprocess.Popen().
         except Exception as e:
             print(f"[INIT] Warning: failed to start poller: {e}")
 
-    start_consent_poller()  # start the consent poller in the background
+    start_consent_poller() # start the consent poller in the background
     start_ingest_server(logger) # start the ingest HTTP server for Consent/Revoke events
     fs.main()               # enter service loop

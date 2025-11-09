@@ -15,3 +15,9 @@ events:
     fields: [uid]
     state_change: erasure_requested
     category: request
+
+state_to_event:
+  consented: Consent
+  revoked: Revoke
+  access_requested: RequestAccess
+  erasure_requested: RequestErasure
