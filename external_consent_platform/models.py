@@ -17,6 +17,7 @@ class CurrentEventState(db.Model):
     current_state_id = db.Column(db.Integer, primary_key=True)
     uid = db.Column(db.String(128), nullable=False)
     purpose = db.Column(db.String(128), nullable=False)
+    category = db.Column(db.String(32), nullable=False, default="general") # consent category, request category, etc.
     status = db.Column(db.String(16), nullable=False)  # consented or revoked
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 

@@ -12,9 +12,20 @@
 <body>
   <h2>Data Subject Portal</h2>
   <form method="post" action="{{ url_for('submit') }}">
-    <input name="uid" placeholder="User full name" required>
-    <input name="purpose" placeholder="Purpose (if any)">
+    {% set all_fields = [] %}
+    {% for event in event_config %}
+      {% for f in event.fields if f not in all_fields %}
+        {% set _ = all_fields.append(f) %}
+      {% endfor %}
+    {% endfor %}
 
+    {# Create one shared input for each unique field used across all events #}
+    {% for field in all_fields %}
+      <input name="{{ field }}" placeholder="{{ field|capitalize }}"
+            {% if field == 'uid' %}required{% endif %}>
+    {% endfor %}
+
+    {# Create buttons dynamically from YAML event names #}
     {% for event in event_config %}
       <button name="action" value="{{ event.name }}">{{ event.name }}</button>
     {% endfor %}
@@ -29,11 +40,23 @@
   </table>
 
   <h3>Current States</h3>
+{% for category, group in states|groupby('category') %}
+  <h4>{{ category|capitalize }} States</h4>
+  {% set has_purpose = group|selectattr('purpose')|list|length > 0 %}
   <table>
-    <tr><th>User full name</th><th>Purpose</th><th>Status</th></tr>
-    {% for s in states %}
-    <tr><td>{{ s.uid }}</td><td>{{ s.purpose }}</td><td>{{ s.status }}</td></tr>
+    <tr>
+      <th>User full name</th>
+      {% if has_purpose %}<th>Purpose</th>{% endif %}
+      <th>Status</th>
+    </tr>
+    {% for s in group %}
+      <tr>
+        <td>{{ s.uid }}</td>
+        {% if has_purpose %}<td>{{ s.purpose }}</td>{% endif %}
+        <td>{{ s.status }}</td>
+      </tr>
     {% endfor %}
   </table>
+{% endfor %}
 </body>
 </html>

@@ -31,7 +31,7 @@ def index():
 def submit():
     uid = request.form["uid"].strip()
     # purpose = request.form["purpose"].strip()
-    purpose = request.form.get("purpose", "").strip()
+    purpose = request.form.get("purpose", "").strip().lower()
     action = request.form["action"]
 
     # find the event definition
@@ -43,25 +43,20 @@ def submit():
     db.session.add(e)
     db.session.commit()
 
+    # Update state only if configured
     state_change = evt_def.get("state_change")
+    category = evt_def.get("category", "general")
     if state_change:
         # use both uid and purpose for lookup (purpose may be empty)
-        s = CurrentEventState.query.filter_by(uid=uid, purpose=purpose).one_or_none()
+        s = CurrentEventState.query.filter_by(uid=uid, purpose=purpose, category=category).one_or_none()
+
         if s:
             s.status = state_change
             s.updated_at = datetime.utcnow()
         else:
-            db.session.add(CurrentEventState(uid=uid, purpose=purpose, status=state_change))
+            db.session.add(CurrentEventState(uid=uid, purpose=purpose, category=category, status=state_change))
         db.session.commit()
 
-    # status = "consented" if action == "Consent" else "revoked" 
-    # s = CurrentEventState.query.filter_by(uid=uid, purpose=purpose).one_or_none()
-    # if s:
-        # s.status = status
-        # s.updated_at = datetime.utcnow()
-    # else:
-        # db.session.add(CurrentEventState(uid=uid, purpose=purpose, status=status))
-    # db.session.commit()
     return redirect(url_for("index"))
 
 if __name__ == "__main__":

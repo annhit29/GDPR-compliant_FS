@@ -2,12 +2,16 @@ events:
   - name: Consent
     fields: [uid, purpose]
     state_change: consented
+    category: consent
   - name: Revoke
     fields: [uid, purpose]
     state_change: revoked
+    category: consent
   - name: RequestAccess
     fields: [uid]
     state_change: access_requested
+    category: request
   - name: RequestErasure
     fields: [uid]
     state_change: erasure_requested
+    category: request

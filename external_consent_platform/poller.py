@@ -1,3 +1,4 @@
+from asyncio import events
 import requests, time, os
 
 BASE_URL = "http://127.0.0.1:5000"
@@ -13,12 +14,12 @@ def poll_once():
     os.makedirs(os.path.dirname(TRACE), exist_ok=True) # extracts the directory path part /home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs and makes sure it exists
     with open(TRACE, "a", encoding="utf-8") as f: # opens the file gdprfstrace.log in append mode, or creates it first automatically if it doesn’t exist yet
         for e in events:
-            payload = {k: e[k] for k in ("kind", "uid", "purpose") if k in e and e[k]}
-            # send it to the FS so the enforcer receives it live:
-            requests.post(
-                "http://127.0.0.1:7000/ingest",
-                json=payload
-            )
+            payload = {"kind": e["kind"]}
+            for key in ("uid", "purpose"):
+                if key in e and e[key]:
+                    payload[key] = e[key]
+            requests.post("http://127.0.0.1:7000/ingest", json=payload)
+            
             requests.patch(f"{BASE_URL}/api/events/{e['id']}/ack") # /ack tells the server we have received and logged this Consent/Revoke event which was pending, so it can be marked as acked = done.
             print(f"[Poller] ACKed event {e['id']} ({e['kind']} for {e['uid']}:{e['purpose']})")
     return len(events) # number of processed events
