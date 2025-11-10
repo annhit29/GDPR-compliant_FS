@@ -44,6 +44,7 @@ If I want to remove `external_consent_platform`'s existing db in order to create
 sudo rm instance/external_consent_platform.db 
 ```
 
+Otherwise, I can directly:
 ```
 python app.py
 ```
@@ -51,15 +52,10 @@ Ctrl+C to stop running app.py
 
 
 then terminal2:
-to remove GDPR FS' database:
 ```
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
-sudo rm gdprfs.db 
-```
-to initialize GDPR FS database's all tables:
-```
-cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
-python3 gdprfs/initialize_gdprfs_tables.py 
+sudo rm gdprfs.db # remove GDPR FS' database 
+sudo python3 gdprfs/setup_db.py # initialize GDPR FS database's all tables
 ```
 
 then terminal1:

@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, Text, Table
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Text, Table
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 Base = declarative_base()
@@ -22,16 +22,16 @@ class File(Base):
     #todo: last or all, à voir
     last_action = Column(String) # "read", "write", "rename", etc.
 
-    # deleted = Column(Integer, default=0) # 0 = file exists aka not deleted, 1 = file deleted # for soft delete
-
     people = relationship("Person", secondary=person_file_map, back_populates="files")
 
 class Person(Base):
     __tablename__ = "person"
     id = Column(Integer, primary_key=True)
-    uid = Column(String, unique=True, nullable=False) # the user identifier field # nullable=False means this field must be filled
+    uid = Column(String, unique=True) # the user identifier field # nullable=False means this field must be provided
+    # this field can be NULL for potential users
     first_name = Column(String)
     last_name = Column(String)
+    registered = Column(Boolean, default=False)  # False = potential user
     files = relationship("File", secondary=person_file_map, back_populates="people")
 
 # Shared engine + session

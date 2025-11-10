@@ -114,10 +114,24 @@ def sync_users_from_external():
                 uid = u["uid"]
                 first = u["first_name"]
                 last = u["last_name"]
-                existing = session.query(Person).filter_by(uid=uid).first()
-                if not existing:
-                    new_p = Person(uid=uid, first_name=first, last_name=last)
+                # Try to find an existing person — either by uid or by same name
+                existing = session.query(Person).filter(
+                    (Person.uid == uid) |
+                    ((Person.first_name == first) & (Person.last_name == last))
+                ).first()
+                # existing = session.query(Person).filter_by(uid=uid).first()
+                if existing:
+                    existing.uid = uid
+                    existing.registered = True
+                    print(f"[DB] Upgraded existing person → uid={uid}, name={first} {last}")
+                else:
+                    new_p = Person(uid=uid, first_name=first, last_name=last, registered=True)
                     session.add(new_p)
+                    print(f"[DB] Added new registered user: {first} {last} ({uid})")
+
+                # if not existing:
+                #     new_p = Person(uid=uid, first_name=first, last_name=last)
+                #     session.add(new_p)
             session.commit()
         print("[INIT] User sync complete.")
     except Exception as e:
