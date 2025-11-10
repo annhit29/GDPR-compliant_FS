@@ -10,7 +10,14 @@
   </style>
 </head>
 <body>
-  <h2>Data Subject Portal</h2>
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h2>Data Subject Portal</h2>
+    <form method="post" action="{{ url_for('logout') }}">
+      <button type="submit" style="background:#d9534f; color:white; border:none; padding:5px 10px; cursor:pointer;">
+        Logout
+      </button>
+    </form>
+  </div>
   <form method="post" action="{{ url_for('submit') }}">
     {% set all_fields = [] %}
     {% for event in event_config %}
