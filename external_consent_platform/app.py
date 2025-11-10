@@ -75,10 +75,14 @@ def index():
     if "uid" not in session: # if user is not logged in
         return redirect(url_for("login")) # then redirect to the login page
     # else:
+    # Fetch current logged-in user info
+    uid = session["uid"]
+    user = User.query.filter_by(uid=uid).first()
+
     events = Event.query.order_by(Event.created_at.desc()).limit(25).all()
     states = CurrentEventState.query.order_by(CurrentEventState.updated_at.desc()).all()
     # return render_template("index.html", events=events, states=states)
-    return render_template("index.html", events=events, states=states, event_config=EVENT_CONFIG)
+    return render_template("index.html", events=events, states=states, event_config=EVENT_CONFIG, user=user)
 
 @app.route("/submit", methods=["POST"])
 def submit():
