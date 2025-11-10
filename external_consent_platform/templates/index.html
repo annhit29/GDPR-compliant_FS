@@ -28,8 +28,9 @@
 
     {# Create one shared input for each unique field used across all events #}
     {% for field in all_fields %}
-      <input name="{{ field }}" placeholder="{{ field|capitalize }}"
-            {% if field == 'uid' %}required{% endif %}>
+      {% if field != 'uid' %}
+        <input name="{{ field }}" placeholder="{{ field|capitalize }}">
+      {% endif %}
     {% endfor %}
 
     {# Create buttons dynamically from YAML event names #}

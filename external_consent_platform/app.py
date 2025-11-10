@@ -3,8 +3,9 @@ from datetime import datetime
 from models import db, Event, CurrentEventState, User
 from api import bp as api_bp
 from werkzeug.serving import run_simple
-
+import requests
 import yaml, os
+from flask import flash
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "event_config.yaml")
 with open(CONFIG_PATH, "r") as f:
@@ -38,6 +39,14 @@ def signup():
         u.set_password(pwd)
         db.session.add(u)
         db.session.commit()
+        
+        # Notify FUSE daemon to sync users
+        try:
+            requests.post("http://127.0.0.1:7000/sync_users", timeout=2)
+            print(f"[SYNC] Notified FUSE daemon to sync users (after {uid} signup).")
+        except Exception as e:
+            print(f"[WARN] Failed to notify FUSE daemon: {e}")
+        
         return redirect(url_for("login"))
     return render_template("signup.html")
 
@@ -73,16 +82,29 @@ def index():
 
 @app.route("/submit", methods=["POST"])
 def submit():
-    uid = request.form["uid"].strip()
-    # purpose = request.form["purpose"].strip()
+    """
+    Handle event submissions from the external consent platform.
+    """
+    if "uid" not in session:
+        flash("You must log in first.")
+        return redirect(url_for("login"))
+    uid = session["uid"] # get uid from session, in order to prevent DS from triggering events for another DS
+    # uid = request.form["uid"].strip()
     purpose = request.form.get("purpose", "").strip().lower()
     action = request.form["action"]
 
+    if not action:
+        flash("No action specified.")
+        return redirect(url_for("index"))
+    
     # find the event definition
     evt_def = next((e for e in EVENT_CONFIG if e["name"] == action), None)
     if not evt_def:
-        return jsonify({"error": f"Unknown event type: {action}"}), 400
+        flash(f"Unknown event type: {action}")
+        return redirect(url_for("index"))
+        # return jsonify({"error": f"Unknown event type: {action}"}), 400
     
+    # Save the event locally in external_consent_platform.db
     e = Event(kind=action, uid=uid, purpose=purpose, status="pending")
     db.session.add(e)
     db.session.commit()
@@ -100,7 +122,6 @@ def submit():
         else:
             db.session.add(CurrentEventState(uid=uid, purpose=purpose, category=category, status=state_change))
         db.session.commit()
-
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
