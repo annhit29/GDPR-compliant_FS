@@ -33,3 +33,16 @@ def get_consent(uid, purpose):
 def list_current_states():
     rows = CurrentEventState.query.all()
     return jsonify([r.as_dict() for r in rows])
+
+@bp.route("/users")
+def get_users():
+    """
+    This method is for ynchronization:
+    Return list of all users.
+    """
+    from models import User
+    users = User.query.all()
+    return jsonify([
+        {"uid": u.uid, "first_name": u.first_name, "last_name": u.last_name}
+        for u in users
+    ])

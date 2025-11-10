@@ -1,6 +1,6 @@
-from flask import Flask, jsonify, render_template, redirect, request, url_for
+from flask import Flask, jsonify, render_template, redirect, request, url_for, session
 from datetime import datetime
-from models import db, Event, CurrentEventState
+from models import db, Event, CurrentEventState, User
 from api import bp as api_bp
 from werkzeug.serving import run_simple
 
@@ -11,6 +11,8 @@ with open(CONFIG_PATH, "r") as f:
     EVENT_CONFIG = yaml.safe_load(f)["events"]
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24) # a SECRET_KEY to securely sign the session cookies # todo: this can be improved by using a fixed secret key from env variable or config file, by storing it in a .env or config file
+
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///external_consent_platform.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
@@ -18,10 +20,52 @@ app.register_blueprint(api_bp, url_prefix="/api")
 
 
 with app.app_context():
-    db.create_all()
+    db.create_all() # create all the relational tables if not exist
 
-@app.route("/")
+# ---- User Authentication Routes ---
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if request.method == "POST":
+        uid = request.form["uid"].strip()
+        first = request.form["first_name"].strip()
+        last = request.form["last_name"].strip()
+        pwd = request.form["password"]
+
+        if User.query.filter_by(uid=uid).first():
+            return "UID already exists", 400
+
+        u = User(uid=uid, first_name=first, last_name=last)
+        u.set_password(pwd)
+        db.session.add(u)
+        db.session.commit()
+        return redirect(url_for("login"))
+    return render_template("signup.html")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        uid = request.form["uid"].strip()
+        pwd = request.form["password"]
+        u = User.query.filter_by(uid=uid).first()
+        if not u or not u.check_password(pwd):
+            return "Invalid credentials", 401
+        session["uid"] = uid
+        return redirect(url_for("index"))
+    return render_template("login.html")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+# ---- Main Application Routes ---
+@app.route("/") # main page
 def index():
+    if "uid" not in session: # if user is not logged in
+        return redirect(url_for("login")) # then redirect to the login page
+    # else:
     events = Event.query.order_by(Event.created_at.desc()).limit(25).all()
     states = CurrentEventState.query.order_by(CurrentEventState.updated_at.desc()).all()
     # return render_template("index.html", events=events, states=states)

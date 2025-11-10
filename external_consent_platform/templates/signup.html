@@ -1,0 +1,9 @@
+<form method="post">
+  <h3>Sign Up</h3>
+  <input name="uid" placeholder="Unique UID" required>
+  <input name="first_name" placeholder="First name" required>
+  <input name="last_name" placeholder="Last name" required>
+  <input name="password" type="password" placeholder="Password" required>
+  <button type="submit">Register</button>
+</form>
+<p>Already have an account? <a href="{{ url_for('login') }}">Log in</a></p>

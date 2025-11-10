@@ -29,6 +29,7 @@ class File(Base):
 class Person(Base):
     __tablename__ = "person"
     id = Column(Integer, primary_key=True)
+    uid = Column(String, unique=True, nullable=False) # the user identifier field # nullable=False means this field must be filled
     first_name = Column(String)
     last_name = Column(String)
     files = relationship("File", secondary=person_file_map, back_populates="people")

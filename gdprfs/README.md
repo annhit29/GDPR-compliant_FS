@@ -30,3 +30,52 @@ INSTRLIB/
 ```
 
 Please refresh the page `http://127.0.0.1:5000/` to see the update.
+
+
+Commands to run:
+terminal3:
+```
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform
+source ~/awscli-venv/bin/activate
+```
+
+If I want to remove `external_consent_platform`'s existing db in order to create a new one automatically on the startup of app.py 
+```
+sudo rm instance/external_consent_platform.db 
+```
+
+```
+python app.py
+```
+Ctrl+C to stop running app.py
+
+
+then terminal2:
+to remove GDPR FS' database:
+```
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
+sudo rm gdprfs.db 
+```
+to initialize GDPR FS database's all tables:
+```
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
+python3 gdprfs/initialize_gdprfs_tables.py 
+```
+
+then terminal1:
+```
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
+. ~/awscli-venv/bin/activate
+./setup_fuse_env.sh
+./reset_myfs_sudo.sh
+
+# Run my FUSE filesystem with the FUSE daemon
+sudo PYTHONPATH=. python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
+```
+
+then terminal2:
+to stop the FUSE daemon:
+```
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
+./reset_myfs_sudo.sh
+```

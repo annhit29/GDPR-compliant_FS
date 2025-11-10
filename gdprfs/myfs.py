@@ -13,7 +13,7 @@ from instrlib.event import Event, Functional
 import os, shutil
 from pathlib import Path
 from gdprfs.db_utils import update_file_mapping_for_upper, update_file_metadata, mark_file_deleted, _is_temp_name
-from gdprfs.models import File
+from gdprfs.models import File, Person
 from gdprfs.db_utils import Session
 import yaml
 
@@ -98,6 +98,32 @@ def _delete_from_mirror(fuse_path: str):
 #         print(f"[DEBUG] psutil failed: {e}")
 #     return False
 
+def sync_users_from_external():
+    """
+    Synchronize users from the external consent platform to the local GDPRFS database.
+    """
+    import requests
+    BASE_URL = "http://127.0.0.1:5000"
+    try:
+        res = requests.get(f"{BASE_URL}/api/users")
+        users = res.json()
+        print(f"[INIT] Syncing {len(users)} users to local DB...")
+
+        with Session() as session:
+            for u in users:
+                uid = u["uid"]
+                first = u["first_name"]
+                last = u["last_name"]
+                existing = session.query(Person).filter_by(uid=uid).first()
+                if not existing:
+                    new_p = Person(uid=uid, first_name=first, last_name=last)
+                    session.add(new_p)
+            session.commit()
+        print("[INIT] User sync complete.")
+    except Exception as e:
+        print(f"[INIT] Failed to sync users: {e}")
+
+
 def replay_from_consent_db(logger):
     """
     On startup, all active events are re-injected into the enforcer, so that the enforcer has the latest event states.
@@ -142,19 +168,20 @@ def replay_from_consent_db(logger):
         print(f"[INIT] Failed to replay consents from consent DB: {e}")
 
 def _get_file_and_user(path: str):
-    """Return (file_id, user_id_string) for the file at path, if any."""
+    """Return (file_id, list of uids) for the file at path, if any."""
     with Session() as session:
         file_obj = session.query(File).filter(File.abs_path == str(Path(path).resolve())).first()
         if not file_obj:
             return None, []
         
-        userids = []
+        uids = []
         for person in file_obj.people:
-            if person:
-                user_id = f"{person.first_name} {person.last_name}"  # or str(person.id)
-                userids.append(user_id)
+            print(f"[DEBUG] Linked Person: uid={person.uid}, first={person.first_name}, last={person.last_name}")
+            if person and person.uid: # if person exists and has a uid
+                uids.append(person.uid)
 
-        return file_obj.file_id, userids
+        print(f"[DEBUG] Returning from _get_file_and_user: fid={file_obj.file_id}, uids={uids}")
+        return file_obj.file_id, uids
 
 
 def events_for_path(path: str, event_type: str):
@@ -193,13 +220,13 @@ def events_for_read(path):
         return []  # No event, coz final Collect will be emitted at rename()
 
     # Case 2: normal file read → Use(fid, purpose, uid)
-    fid, userids = _get_file_and_user(_upper(path))
+    fid, uids = _get_file_and_user(_upper(path))
     fid = fid or f"unknown-{base}"
-    # uid = uid or "anonymous"
+
     # If no users, default to anonymous
-    if not userids:
-        userids = ["anonymous"]
-    return [Event('Use', fid, 'marketing', uid) for uid in userids]
+    if not uids:
+        uids = ["anonymous"]
+    return [Event('Use', fid, 'marketing', uid) for uid in uids]
 
 # ========== SCHEMA ==========
 schema = Schema()
@@ -278,8 +305,11 @@ pdp = EnfGuard(INSTRLIB_EXE, INSTRLIB_SIG, INSTRLIB_FORMULA, log_file=INSTRLIB_L
 # logger = Logger(name="gdprfs")
 logger = Logger(pep, schema, pdp)
 print("PEP mapping keys:", list(logger.pep.mapping.keys()))
+
+# --- STARTUP OF THE ENFORCER AND SYNC ---
 pdp.start_threads() # then start the EnfGuard enforcer + threads
-replay_from_consent_db(logger)
+sync_users_from_external() # sync users from external consent platform
+replay_from_consent_db(logger) # replay all current consent states into the enforcer
 
 # --- Ingest HTTP server: receives Consent/Revoke from poller ---
 from http.server import BaseHTTPRequestHandler, HTTPServer
