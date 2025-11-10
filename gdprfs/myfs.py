@@ -114,11 +114,13 @@ def sync_users_from_external():
                 uid = u["uid"]
                 first = u["first_name"]
                 last = u["last_name"]
+
                 # Try to find an existing person — either by uid or by same name
                 existing = session.query(Person).filter(
                     (Person.uid == uid) |
                     ((Person.first_name == first) & (Person.last_name == last))
                 ).first()
+
                 # existing = session.query(Person).filter_by(uid=uid).first()
                 if existing:
                     existing.uid = uid
@@ -190,7 +192,7 @@ def _get_file_and_user(path: str):
         
         uids = []
         for person in file_obj.people:
-            print(f"[DEBUG] Linked Person: uid={person.uid}, first={person.first_name}, last={person.last_name}")
+            # print(f"[DEBUG] Linked Person: uid={person.uid}, first={person.first_name}, last={person.last_name}")
             if person and person.uid: # if person exists and has a uid
                 uids.append(person.uid)
 
@@ -244,12 +246,12 @@ def events_for_read(path):
         # if not file_obj:
         #     return [Event("Use", fid, "marketing", "anonymous")]
 
-        # 🧠 CASE 1: No personal data linked → free access, but still log as "nonpersonal"
+        # Case 1: No personal data linked → free access, but still log as "nonpersonal"
         if not file_obj or not file_obj.people:
             print(f"[GDPR] {fid} contains no personal data — allowed freely")
             return [Event("Use", fid, "nonpersonal", "noone")]
 
-        # 🧠 CASE 2: Personal data → one Use per data subject (registered or not)
+        # Case 2: Personal data → one Use per data subject (registered or not)
         for person in file_obj.people:
             # choose uid or derive fallback
             if person.uid:
@@ -359,29 +361,53 @@ import json
 def start_ingest_server(logger):
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
-            if self.path != "/ingest":
-                self.send_error(404); return
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
-                kind = str(payload.get("kind", "")).strip()
-                uid = payload.get("uid")
-                purpose = str(payload.get("purpose", "")).strip()
+                # --- Branch 1: handle Consent/Revoke events ---
 
-                if not kind or not uid:
-                    self.send_error(400, "missing kind or uid")
-                    return
-                # Create a generic Event, supporting any kind
-                # If purpose missing, drop it automatically
-                if purpose:
-                    evt = Event(kind, uid, purpose)
+            # if self.path != "/ingest":
+                # self.send_error(404); return
+            # try:
+                if self.path == "/ingest":
+                    # length = int(self.headers.get("Content-Length", "0"))
+                    # payload = json.loads(self.rfile.read(length) or b"{}")
+                    kind = str(payload.get("kind", "")).strip()
+                    uid = payload.get("uid")
+                    purpose = str(payload.get("purpose", "")).strip()
+
+                    if not kind or not uid:
+                        self.send_error(400, "missing kind or uid")
+                        return
+                    
+                    # Create a generic Event, supporting any kind
+                    # If purpose missing, drop it automatically
+                    if purpose:
+                        evt = Event(kind, uid, purpose)
+                    else:
+                        evt = Event(kind, uid)
+                    
+                    logger.log([evt], threading.Event(), False)
+
+                    self.send_response(200)
+                    self.end_headers()
+                    self.wfile.write(b'{"ok": true, "message": "Event ingested/logged."}')
+
+                # --- Branch 2: handle user sync trigger ---
+                elif self.path == "/sync_users":
+                    try:
+                        sync_users_from_external()
+                        self.send_response(200)
+                        self.end_headers()
+                        self.wfile.write(b'{"ok": true, "msg": "Synced users successfully"}')
+                        print("[SYNC] Received external trigger → synced users from consent platform.")
+
+                    except Exception as e:
+                        self.send_error(500, str(e))
+
                 else:
-                    evt = Event(kind, uid)
-                logger.log([evt], threading.Event(), False)
+                    self.send_error(404, "Unknown endpoint")
 
-                self.send_response(200)
-                self.end_headers()
-                self.wfile.write(b'{"ok": true}')
             except Exception as e:
                 self.send_error(500, str(e))
 
@@ -393,7 +419,9 @@ def start_ingest_server(logger):
 
     t = threading.Thread(target=serve, daemon=True)
     t.start()
-    print("[INIT] Consent/Revoke ingest server at http://127.0.0.1:7000/ingest")
+    print("[INIT] Ingest + Sync HTTP server started at:")
+    print("  - POST /ingest → for Consent/Revoke events")
+    print("  - POST /sync_users → for syncing new users")
 
 class InstrumentNoAttr(Instrument):
     """
