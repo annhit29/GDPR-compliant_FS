@@ -237,10 +237,37 @@ def events_for_read(path):
     fid, uids = _get_file_and_user(_upper(path))
     fid = fid or f"unknown-{base}"
 
-    # If no users, default to anonymous
-    if not uids:
-        uids = ["anonymous"]
-    return [Event('Use', fid, 'marketing', uid) for uid in uids]
+    events = []
+    with Session() as session:
+        file_obj = session.query(File).filter(File.abs_path == str(_upper(path).resolve())).first()
+        print(f'{file_obj=}')
+        # if not file_obj:
+        #     return [Event("Use", fid, "marketing", "anonymous")]
+
+        # 🧠 CASE 1: No personal data linked → free access, but still log as "nonpersonal"
+        if not file_obj or not file_obj.people:
+            print(f"[GDPR] {fid} contains no personal data — allowed freely")
+            return [Event("Use", fid, "nonpersonal", "noone")]
+
+        # 🧠 CASE 2: Personal data → one Use per data subject (registered or not)
+        for person in file_obj.people:
+            # choose uid or derive fallback
+            if person.uid:
+                uid = person.uid
+            else:
+                # deterministic pseudo-uid for unregistered users
+                first = (person.first_name or "").lower().replace(" ", "")
+                last  = (person.last_name or "").lower().replace(" ", "")
+                uid = (first[:1] + last) if first or last else "anonymous"
+
+            events.append(Event("Use", fid, "marketing", uid))
+
+    print(f"[GDPR] Emitting {len(events)} Use events for {fid}: {[e.args for e in events]}")
+    return events
+    # # If no users, default to anonymous
+    # if not uids:
+    #     uids = ["anonymous"]
+    # return [Event('Use', fid, 'marketing', uid) for uid in uids]
 
 # ========== SCHEMA ==========
 schema = Schema()
