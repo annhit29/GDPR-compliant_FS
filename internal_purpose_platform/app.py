@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session
+from flask import Flask, render_template, request, redirect, url_for, session, flash
 from models import db, InternalUser, CurrentSession
 import requests, yaml, os
 
@@ -128,9 +128,19 @@ def stop_session():
 
     # Mark current session inactive
     current = CurrentSession.query.filter_by(uid=uid, active=True).first()
-    if current:
-        current.active = False
-        db.session.commit()
+    if not current: # if the session is already inactive
+        print(f"[Internal] No active session to stop for {uid}. Skipping.") #print to FUSE terminal
+        flash("No active session to stop.") #print to internal interface
+
+        return redirect(url_for("index"))  # this means: no FUSE notify, no DB update
+
+    # else: Mark inactive
+    current.active = False
+    db.session.commit()
+
+    # if current:
+    #     current.active = False
+    #     db.session.commit()
     
     # Notify FUSE
     payload = {"kind": "StopSession", "uid": uid}
