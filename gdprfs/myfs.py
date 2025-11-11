@@ -276,7 +276,6 @@ def events_for_read(path):
 
 # ========== SCHEMA ==========
 schema = Schema()
-# change
 schema.add('Use', [str, str]) # for reads
 schema.add('Delete', [str])    # for deletes
 schema.add('Collect', [str, str]) # for writes

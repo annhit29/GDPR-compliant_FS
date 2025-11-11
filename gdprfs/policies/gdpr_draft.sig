@@ -1,9 +1,9 @@
-Use(fid:string, uid:string)-
+StartSession(inUid:string,p:string,reason:string)
+StopSession(inUid:string)
+Use(fid:string, exUid:string)-
+Collect(exUid:string,p:string)
 Delete(fid:string)+
-Collect(uid:string,p:string)
-StartSession(uid:string,p:string,reason:string)
-StopSession(uid:string)
-Consent(uid:string, p:string)
-Revoke(uid:string, p:string)
-RequestAccess(uid:string)
-RequestErasure(uid:string)
+Consent(exUid:string, p:string)
+Revoke(exUid:string, p:string)
+RequestAccess(exUid:string)
+RequestErasure(exUid:string)
