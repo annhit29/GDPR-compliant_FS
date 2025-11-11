@@ -8,6 +8,8 @@ Main Flask app (with signup/login/logout + StartSession/StopSession routes).
 # --- Flask Setup ---
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+
+app.config["SESSION_COOKIE_NAME"] = "internal_session"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///internal_purpose_platform.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)

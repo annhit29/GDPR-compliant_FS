@@ -14,6 +14,7 @@ with open(CONFIG_PATH, "r") as f:
 app = Flask(__name__)
 app.secret_key = os.urandom(24) # a SECRET_KEY to securely sign the session cookies # todo: this can be improved by using a fixed secret key from env variable or config file, by storing it in a .env or config file
 
+app.config["SESSION_COOKIE_NAME"] = "external_session"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///external_consent_platform.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 db.init_app(app)
