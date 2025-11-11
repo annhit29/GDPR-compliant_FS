@@ -16,7 +16,7 @@ with app.app_context():
     db.create_all()
 
 # --- Load reasons.yaml ---
-REASONS_PATH = os.path.join(os.path.dirname(__file__), "reasons.yaml")
+REASONS_PATH = os.path.join(os.path.dirname(__file__), "purposes_and_reasons.yaml")
 with open(REASONS_PATH, "r") as f:
     PURPOSES = yaml.safe_load(f)
 
@@ -95,9 +95,11 @@ def start_session():
     if old:
         old.active = False
         db.session.commit()
-        # Notify FUSE that old session ended
+
+        # Notify FUSE that old session has ended/stopped:
+        payload = {"kind": "StopSession", "uid": uid}
         try:
-            requests.post("http://127.0.0.1:7000/ingest", json={"kind": "StopSession", "uid": uid}, timeout=2)
+            requests.post("http://127.0.0.1:7000/ingest", json=payload, timeout=2)
             print(f"[Internal] Sent StopSession({uid}) before new StartSession.")
         except Exception as e:
             print(f"[WARN] StopSession notify failed: {e}")

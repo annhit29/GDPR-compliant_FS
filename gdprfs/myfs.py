@@ -377,22 +377,37 @@ def start_ingest_server(logger):
                 if self.path == "/ingest":
                     # length = int(self.headers.get("Content-Length", "0"))
                     # payload = json.loads(self.rfile.read(length) or b"{}")
-                    kind = str(payload.get("kind", "")).strip()
+                    kind = str(payload.get("kind", "")).strip() # is the event name, e.g. "Consent", "Revoke", "RequestAccess", "RequestErasure", "StartSession", "StopSession"
                     uid = payload.get("uid")
                     purpose = str(payload.get("purpose", "")).strip()
+                    reason = str(payload.get("reason", "")).strip()
 
                     if not kind or not uid:
                         self.send_error(400, "missing kind or uid")
                         return
-                    
+
+                    # CASE 1: StartSession(uid, purpose, reason)
+                    if kind == "StartSession":
+                        if not purpose or not reason:
+                            self.send_error(400, "missing purpose or reason for StartSession")
+                            return
+                        evt = Event("StartSession", uid, purpose, reason)
+
+                    # CASE 2: StopSession(uid)
+                    elif kind == "StopSession":
+                        evt = Event("StopSession", uid)
+
+                    # CASE 3: Consent/Revoke or others (already handled)
                     # Create a generic Event, supporting any kind
                     # If purpose missing, drop it automatically
-                    if purpose:
+                    elif purpose: # if purpose is provided && it's not the StopSession event
                         evt = Event(kind, uid, purpose)
                     else:
                         evt = Event(kind, uid)
-                    
+
+                    print(f"[INGEST] Received {kind} event from {'internal' if kind in ['StartSession','StopSession'] else 'external'} platform.")                    
                     logger.log([evt], threading.Event(), False)
+                    print(f"[INGEST] Logged event {kind}({uid}, {purpose or reason})")
 
                     self.send_response(200)
                     self.end_headers()
@@ -427,6 +442,7 @@ def start_ingest_server(logger):
     print("[INIT] Ingest + Sync HTTP server started at:")
     print("  - POST /ingest → for Consent/Revoke events")
     print("  - POST /sync_users → for syncing new users")
+    print("  - POST /ingest also supports StartSession/StopSession from internal purpose platform")
 
 class InstrumentNoAttr(Instrument):
     """
