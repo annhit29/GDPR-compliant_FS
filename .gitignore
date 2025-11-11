@@ -11,3 +11,10 @@ logs/
 .DS_Store
 .venv
 .vscode
+
+gdprfs.db
+gdprfs/gdprfstrace.log
+external_consent_platform/instance/external_consent_platform.db
+internal_purpose_platform/instance/internal_purpose_platform.db
+instrlib/instrument.py
+external_consent_platform/signup&login_credentials.txt
