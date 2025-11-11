@@ -214,7 +214,8 @@ def events_for_path(path: str, event_type: str):
     if not uid:
         uid = "anonymous"
     if event_type == 'Use':
-        return [Event('Use', fid, 'marketing', uid)]
+        return [Event('Use', fid, uid)]
+        # return [Event('Use', fid, 'marketing', uid)]
     elif event_type == 'Collect':
         return [Event('Collect', fid, 'marketing')]
     elif event_type == 'Delete':
@@ -249,7 +250,8 @@ def events_for_read(path):
         # Case 1: No personal data linked → free access, but still log as "nonpersonal"
         if not file_obj or not file_obj.people:
             print(f"[GDPR] {fid} contains no personal data — allowed freely")
-            return [Event("Use", fid, "nonpersonal", "noone")]
+            return [Event("Use", fid, "noone")]
+            # return [Event("Use", fid, "nonpersonal", "noone")] #todo: how to set p = "nonpersonal"?
 
         # Case 2: Personal data → one Use per data subject (registered or not)
         for person in file_obj.people:
@@ -262,7 +264,8 @@ def events_for_read(path):
                 last  = (person.last_name or "").lower().replace(" ", "")
                 uid = (first[:1] + last) if first or last else "anonymous"
 
-            events.append(Event("Use", fid, "marketing", uid))
+            events.append(Event("Use", fid, uid))
+            # events.append(Event("Use", fid, "marketing", uid))
 
     print(f"[GDPR] Emitting {len(events)} Use events for {fid}: {[e.args for e in events]}")
     return events
@@ -273,7 +276,8 @@ def events_for_read(path):
 
 # ========== SCHEMA ==========
 schema = Schema()
-schema.add('Use', [str, str, str]) # for reads
+# change
+schema.add('Use', [str, str]) # for reads
 schema.add('Delete', [str])    # for deletes
 schema.add('Collect', [str, str]) # for writes
 
@@ -309,8 +313,8 @@ causation_handlers = {('Delete'): none_handler,
 # ========== MAPPINGS ==========
 def read_mapping(action):  
     print(f'[read_mapping DEBUG] {str(action)}')
-    return Event('Use', str(action), 'marketing', 'userid1')
-    # return Event('Use', str(action), 'marketing')
+    return Event('Use', str(action), 'userid1')
+    # return Event('Use', str(action), 'marketing', 'userid1')
 # todo: or the following?
 # def read_mapping(action):
     # print("[DEBUG InstrumentationMapping] remapping event", action)

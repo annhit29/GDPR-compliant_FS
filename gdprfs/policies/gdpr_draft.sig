@@ -1,4 +1,4 @@
-Use(fid:string, p:string, uid:string)-
+Use(fid:string, uid:string)-
 Delete(fid:string)+
 Collect(uid:string,p:string)
 StartSession(uid:string,p:string,reason:string)
