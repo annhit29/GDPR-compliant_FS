@@ -29,7 +29,9 @@
   <div style="display:flex; justify-content:space-between; align-items:center;">
     <h2>Internal Processing Portal</h2>
     <form method="post" action="{{ url_for('logout') }}">
-      <button type="submit" style="background:#d9534f; color:white;">Logout</button>
+      <button type="submit" style="background:#d9534f; color:white; padding:5px 10px; cursor:pointer;">
+        Logout
+      </button>
     </form>
   </div>
 
@@ -54,7 +56,9 @@
   </form>
 
   <form method="post" action="{{ url_for('stop_session') }}">
-    <button type="submit" style="background:#d9534f; color:white;">Stop Session</button>
+    <button type="submit" style="background:#d9534f; color:white; padding:5px 10px; cursor:pointer;">
+      Stop Session
+    </button>
   </form>
 </body>
 </html>
