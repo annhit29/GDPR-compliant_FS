@@ -276,10 +276,15 @@ schema = Schema()
 schema.add('Use', [str, str, str]) # for reads
 schema.add('Delete', [str])    # for deletes
 schema.add('Collect', [str, str]) # for writes
+
+schema.add('StartSession', [str, str, str])
+schema.add('StopSession', [str])
+
 schema.add('Consent', [str, str]) # for consent events
 schema.add('Revoke', [str, str]) # for revoke consent events
 schema.add('RequestAccess', [str]) # request all DS data events from the FS
 schema.add('RequestErasure', [str]) # request erasure of all DS data events in the FS
+
 
 
 # ========== HANDLERS ==========

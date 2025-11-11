@@ -2,44 +2,59 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Internal Purpose Control Panel</title>
+  <title>Internal Purpose Platform</title>
   <style>
     body { font-family: sans-serif; margin: 2em; }
-    table { border-collapse: collapse; width: 100%; margin-top: 1em; }
-    td, th { border: 1px solid #ddd; padding: .4em; }
+    form { margin-top: 1em; }
+    select, button { margin: 5px; padding: 5px; }
   </style>
+  <script>
+    const PURPOSES = {{ purposes | tojson }};
+    function updateReasons() {
+      const purpose = document.getElementById("purpose").value;
+      const reasonSelect = document.getElementById("reason");
+      reasonSelect.innerHTML = "";
+      if (purpose && PURPOSES[purpose]) {
+        PURPOSES[purpose].forEach(r => {
+          const opt = document.createElement("option");
+          opt.value = r;
+          opt.textContent = r;
+          reasonSelect.appendChild(opt);
+        });
+      }
+    }
+  </script>
 </head>
-<body>
-  <h2>Internal User Interface</h2>
-  <form method="post" action="/start">
-    <input name="uid" placeholder="Employee full name" required>
-    <select name="purpose">
-      <option>service</option><option>analytics</option><option>marketing</option>
+<body onload="updateReasons()">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <h2>Internal Processing Portal</h2>
+    <form method="post" action="{{ url_for('logout') }}">
+      <button type="submit" style="background:#d9534f; color:white;">Logout</button>
+    </form>
+  </div>
+
+  <p>Logged in as <strong>{{ user.first_name }} {{ user.last_name }}</strong> ({{ user.uid }})</p>
+  {% if current %}
+    <p><strong>Active session:</strong> {{ current.purpose }} → {{ current.reason }} (since {{ current.started_at.strftime("%H:%M:%S") }})</p>
+  {% else %}
+    <p><em>No active session</em></p>
+  {% endif %}
+  <form method="post" action="{{ url_for('start_session') }}">
+    <label>Purpose:</label>
+    <select id="purpose" name="purpose" onchange="updateReasons()">
+      {% for p in purposes.keys() %}
+        <option value="{{ p }}">{{ p }}</option>
+      {% endfor %}
     </select>
-    <input name="reason" placeholder="Reason" required>
+
+    <label>Reason:</label>
+    <select id="reason" name="reason"></select>
+
     <button type="submit">Start Session</button>
   </form>
 
-  <form method="post" action="/stop" style="margin-top:8px;">
-    <input name="uid" placeholder="Employee full name" required>
-    <button type="submit">Stop Session</button>
+  <form method="post" action="{{ url_for('stop_session') }}">
+    <button type="submit" style="background:#d9534f; color:white;">Stop Session</button>
   </form>
-  
-  <h3>Recent Events</h3>
-  <table>
-    <tr><th>Kind</th><th>Employee full name</th><th>Purpose</th><th>Reason</th><th>Timestamp</th></tr>
-    {% for e in events %}
-    <tr><td>{{ e.kind }}</td><td>{{ e.uid }}</td><td>{{ e.purpose }}</td><td>{{ e.reason }}</td><td>{{ e.created_at }}</td></tr>
-    {% endfor %}
-  </table>
-
-  <h3>Current Sessions</h3>
-  <table>
-    <tr><th>Employee full name</th><th>Purpose</th><th>Reason</th><th>Active</th></tr>
-    {% for s in sessions %}
-    <tr><td>{{ s.uid }}</td><td>{{ s.purpose }}</td><td>{{ s.reason }}</td><td>{{ 'yes' if s.active else 'no' }}</td></tr>
-    {% endfor %}
-  </table>
-
 </body>
 </html>

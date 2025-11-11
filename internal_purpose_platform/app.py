@@ -1,60 +1,143 @@
-from flask import Flask, render_template, request, redirect, url_for
-from datetime import datetime
-from models import db, SessionEvent, CurrentSession
-from api import bp as api_bp
-from werkzeug.serving import run_simple
+from flask import Flask, render_template, request, redirect, url_for, session
+from models import db, InternalUser, CurrentSession
+import requests, yaml, os
 
+"""
+Main Flask app (with signup/login/logout + StartSession/StopSession routes).
+"""
+# --- Flask Setup ---
 app = Flask(__name__)
+app.secret_key = os.urandom(24)
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///internal_purpose_platform.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
 db.init_app(app)
-app.register_blueprint(api_bp, url_prefix="/api")
 
 with app.app_context():
     db.create_all()
 
+# --- Load reasons.yaml ---
+REASONS_PATH = os.path.join(os.path.dirname(__file__), "reasons.yaml")
+with open(REASONS_PATH, "r") as f:
+    PURPOSES = yaml.safe_load(f)
+
+# --- Authentication Routes ---
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if request.method == "POST":
+        uid = request.form["uid"].strip()
+        first = request.form["first_name"].strip()
+        last = request.form["last_name"].strip()
+        pwd = request.form["password"]
+
+        if InternalUser.query.filter_by(uid=uid).first():
+            return "User already exists", 400
+
+        u = InternalUser(uid=uid, first_name=first, last_name=last)
+        u.set_password(pwd)
+        db.session.add(u)
+        db.session.commit()
+        return redirect(url_for("login"))
+    return render_template("signup.html")
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        uid = request.form["uid"].strip()
+        pwd = request.form["password"]
+        u = InternalUser.query.filter_by(uid=uid).first()
+        if not u or not u.check_password(pwd):
+            return "Invalid credentials", 401
+        session["uid"] = uid
+        return redirect(url_for("index"))
+    return render_template("login.html")
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    uid = session.get("uid")
+    if uid:
+        # Stop any active session for this user
+        current = CurrentSession.query.filter_by(uid=uid, active=True).first()
+        if current: # if there's an active session
+            current.active = False # then stop it
+            db.session.commit()
+            print(f"[Internal] Auto-stopped active session for {uid} on logout")
+
+            # Notify FUSE as well
+            try:
+                payload = {"kind": "StopSession", "uid": uid}
+                requests.post("http://127.0.0.1:7000/ingest", json=payload, timeout=2) # timeout after 2s if FUSE is down
+                print(f"[Internal] Sent StopSession({uid}) → FUSE on logout")
+            except Exception as e:
+                print(f"[WARN] Failed to notify FUSE on logout: {e}")
+
+    # Clear the web session
+    session.clear()
+    return redirect(url_for("login"))
+
+# --- Main Page Routes ---
 @app.route("/")
 def index():
-    sessions = CurrentSession.query.order_by(CurrentSession.updated_at.desc()).all()
-    events = SessionEvent.query.order_by(SessionEvent.created_at.desc()).limit(25).all()
-    return render_template("index.html", sessions=sessions, events=events)
+    if "uid" not in session:
+        return redirect(url_for("login"))
+    user = InternalUser.query.filter_by(uid=session["uid"]).first()
+    current = CurrentSession.query.filter_by(uid=user.uid, active=True).first()
+    return render_template("index.html", user=user, purposes=PURPOSES, current=current)
 
-@app.route("/start", methods=["POST"])
-def start():
-    uid = request.form["uid"].strip()
-    purpose = request.form["purpose"].strip()
-    reason = request.form["reason"].strip()
+# --- Start/Stop session routes ---
+@app.route("/start_session", methods=["POST"])
+def start_session():
+    uid = session.get("uid")
+    purpose = request.form["purpose"]
+    reason = request.form["reason"]
 
-    # create the SessionStart event (i.e. `Use` event begins)
-    ev = SessionEvent(uid=uid, purpose=purpose, reason=reason, kind="Start")
-    db.session.add(ev)
+    # Stop old session if exists
+    old = CurrentSession.query.filter_by(uid=uid, active=True).first()
+    if old:
+        old.active = False
+        db.session.commit()
+        # Notify FUSE that old session ended
+        try:
+            requests.post("http://127.0.0.1:7000/ingest", json={"kind": "StopSession", "uid": uid}, timeout=2)
+            print(f"[Internal] Sent StopSession({uid}) before new StartSession.")
+        except Exception as e:
+            print(f"[WARN] StopSession notify failed: {e}")
 
-    cur = CurrentSession.query.filter_by(uid=uid).first() # if the currentSession already exists, update it
-    if cur:
-        cur.purpose = purpose
-        cur.reason = reason
-        cur.active = True
-        cur.updated_at = datetime.utcnow()
-    else: # else, create a new currentSession
-        db.session.add(CurrentSession(uid=uid, purpose=purpose, reason=reason, active=True))
-
+    # Start a new session
+    s = CurrentSession(uid=uid, purpose=purpose, reason=reason, active=True)
+    db.session.add(s)
     db.session.commit()
+
+    # Notify FUSE
+    payload = {"kind": "StartSession", "uid": uid, "purpose": purpose, "reason": reason}
+    try:
+        res = requests.post("http://127.0.0.1:7000/ingest", json=payload, timeout=2)
+        res.raise_for_status()
+        print(f"[Internal] Sent StartSession({uid}, {purpose}, {reason}) → FUSE")
+    except Exception as e:
+        print(f"[WARN] Failed to send StartSession: {e}")
+
     return redirect(url_for("index"))
 
-@app.route("/stop", methods=["POST"])
-def stop():
-    uid = request.form["uid"].strip()
-    ev = SessionEvent(uid=uid, purpose="", reason="", kind="Stop")
-    db.session.add(ev)
+@app.route("/stop_session", methods=["POST"])
+def stop_session():
+    uid = session.get("uid")
 
-    cur = CurrentSession.query.filter_by(uid=uid).first()
-    if cur:
-        cur.active = False
-        cur.updated_at = datetime.utcnow()
+    # Mark current session inactive
+    current = CurrentSession.query.filter_by(uid=uid, active=True).first()
+    if current:
+        current.active = False
+        db.session.commit()
+    
+    # Notify FUSE
+    payload = {"kind": "StopSession", "uid": uid}
+    try:
+        res = requests.post("http://127.0.0.1:7000/ingest", json=payload, timeout=2)
+        res.raise_for_status()
+        print(f"[Internal] Sent StopSession({uid}) → FUSE")
+    except Exception as e:
+        print(f"[WARN] Failed to send StopSession: {e}")
 
-    db.session.commit()
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
-    run_simple("127.0.0.1", 8000, app, use_reloader=True, use_debugger=True, threaded=True)
+    app.run("127.0.0.1", 8000, debug=True)

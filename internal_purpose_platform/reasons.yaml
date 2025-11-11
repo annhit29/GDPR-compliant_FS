@@ -1,0 +1,8 @@
+marketing:
+  - direct_marketing
+  - mass_marketing
+service:
+  - report
+analytics:
+  - profiling
+  - dashboard

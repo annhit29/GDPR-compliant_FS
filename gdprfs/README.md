@@ -5,26 +5,32 @@ INSTRLIB/
 ├── gdprfs/
 │   ├── myfs.py                 ← has the poller inside 
 │   ├── db_utils.py
-│   ├── models.py
+│   ├── models.py               ← GDPR FS' DB models
+│   ├── setup_db.py             ← set up the GDPR FS' DB  
 │   └── ...
+└── gdprfs.db
 │
-└── external_consent_platform/  ← external Data Subject (DS) Flask portal
-│   ├── app.py                  ← Flask app (main entrypoint)
+└── external_consent_platform/  ← external Data Subject (DS, = external users) Flask portal
+│   ├── app.py                  ← Flask app (main entrypoint) for DS
 │   ├── api.py                  ← REST API routes for this FS
-│   ├── models.py               ← DB models
+│   ├── models.py               ← external consent platform's DB models
 │   ├── poller.py               ← FS-side poller
+│   ├── event_config.yaml       ← modularize the external consent platform and GDPR-compliant FS related part
 │   └── templates/
-│   │   └── index.html          ← DS's webpage (HTML UI)
+│   │   ├── index.html          ← DS's webpage (HTML UI)
+│   │   ├── signup.html
+│   │   └── login.html
 │   └── instance/
-        └── external_purpose_platform.db
+│       └── external_purpose_platform.db
 │
 └── internal_purpose_platform/
-    ├── __init__.py
-    ├── app.py
-    ├── api.py
-    ├── models.py
-    ├── templates/
-    │   └── index.html
+    ├── app.py v
+    ├── models.py v
+    ├── reasons.yaml v
+    ├── templates/ v
+    │   ├── index.html v
+    │   ├── signup.html v
+    │   └── login.html v
     └── instance/
         └── internal_purpose_platform.db
 ```

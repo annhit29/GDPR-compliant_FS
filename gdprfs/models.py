@@ -27,11 +27,10 @@ class File(Base):
 class Person(Base):
     __tablename__ = "person"
     id = Column(Integer, primary_key=True)
-    uid = Column(String, unique=True) # the user identifier field # nullable=False means this field must be provided
-    # this field can be NULL for potential users
+    uid = Column(String, unique=True) # the user identifier field  # this field can be NULL for potential users
     first_name = Column(String)
     last_name = Column(String)
-    registered = Column(Boolean, default=False)  # False = potential user
+    registered = Column(Boolean, default=False)  # 0 = False  = potential user or not-yet-registered user, 1 = True = registered user
     files = relationship("File", secondary=person_file_map, back_populates="people")
 
 # Shared engine + session

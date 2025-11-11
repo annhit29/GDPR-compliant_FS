@@ -32,11 +32,11 @@ class CurrentEventState(db.Model):
 
 class User(db.Model):
     """
-    The attributes first_name, last_name are the users' personal data that are evaluated by the Enforcer.
+    The attributes first_name, last_name are the DS' personal data that are evaluated by the Enforcer.
     """
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True) # identifier for the internal "external consent platform" database
-    uid = db.Column(db.String(64), unique=True, nullable=False) # user identifier
+    uid = db.Column(db.String(64), unique=True, nullable=False) # user identifier  # nullable=False means this field must be provided
     first_name = db.Column(db.String(64))
     last_name = db.Column(db.String(64))
     password_hash = db.Column(db.String(128), nullable=False)
