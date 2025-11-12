@@ -81,3 +81,38 @@ to stop the FUSE daemon:
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
 ./reset_myfs_sudo.sh
 ```
+
+
+TL;DR: t
+step1: in terminal3:
+```
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform
+source ~/awscli-venv/bin/activate
+python app.py
+```
+
+step2: in terminal4:
+```
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/internal_purpose_platform
+source ~/awscli-venv/bin/activate
+python app.py
+```
+
+step3: in terminal1:
+```
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
+. ~/awscli-venv/bin/activate
+./reset_myfs_sudo.sh
+```
+
+i.e.
+
+1. Run in terminal1:
+```
+./setup_fuse_env.sh;
+./run_all.sh
+```
+2. Run in terminal2: `sudo PYTHONPATH=. python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other`
+
+Whenever we want to stop the external consent platform and the internal purpose platform, do Ctrl+C on both terminals.
+Whenever we want to stop the FUSE daemon, do in terminal1: `./reset_myfs_sudo.sh`
