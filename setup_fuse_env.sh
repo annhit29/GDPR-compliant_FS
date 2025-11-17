@@ -57,15 +57,6 @@ python3 -c "import sqlalchemy; print('✅ SQLAlchemy imported successfully, vers
 echo "---🔹 SQLAlchemy package details:---"
 pip show sqlalchemy
 
-# echo "[GDPRFS] Checking Python dependency: psutil..."
-# if ! python3 -c "import psutil" &>/dev/null; then
-#     echo "📦 Installing psutil..."
-#     sudo apt update -y && sudo apt install -y python3-psutil
-# else
-#     echo "✅ psutil already installed."
-# fi
-
-# Flask (werkzeug is automatically included) + dependencies
 echo "🔹 Installing Flask + Requests in the virtual environment..."
 pip install flask requests 
 
@@ -79,7 +70,6 @@ echo "Verifying Flask-SQLAlchemy installation..."
 python3 -c "import importlib.metadata; print('✅ Flask-SQLAlchemy version:', importlib.metadata.version('flask-sqlalchemy'))"
 
 echo "🔹 Installing Pydantic + Pydantic-AI..."
-# pip install "pydantic>=2" pydantic-ai
 pip install "pydantic>=2" pydantic-ai openai python-docx odfpy pandas openpyxl pdfminer.six
 
 python3 -c "import pydantic; print('✅ Pydantic version:', pydantic.__version__)"

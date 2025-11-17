@@ -36,3 +36,15 @@ class Person(Base):
 # Shared engine + session
 ENGINE = create_engine("sqlite:///gdprfs.db")
 Session = sessionmaker(bind=ENGINE)
+
+# -------------------------------------------
+# LLM Annotation Models
+# -------------------------------------------
+
+from pydantic import BaseModel
+
+class PersonalDataAnnotation(BaseModel):
+    contains_personal_data: bool
+    categories: list[str]           # ["email", "name", ...]
+    detected_persons: list[str]     # ["John Doe"]
+    explanation: str

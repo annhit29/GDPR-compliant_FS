@@ -19,3 +19,7 @@ internal_purpose_platform/instance/internal_purpose_platform.db
 instrlib/instrument.py
 external_consent_platform/signup&login_credentials.txt
 gdprfs/myfs_for_internal.py
+
+/home/ann20010929/gdprfs-venv/.env
+.env
+*.env
