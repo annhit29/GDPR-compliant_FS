@@ -23,3 +23,4 @@ gdprfs/myfs_for_internal.py
 /home/ann20010929/gdprfs-venv/.env
 .env
 *.env
+gdprfs/test_files/

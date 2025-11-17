@@ -92,6 +92,15 @@ STRICT OUTPUT RULES:
   "explanation": str
 }
 
+Note: categories can include:
+- Name (first; Last; Full)
+- Email
+- Phone Number
+- Identifier
+- Location (City; Country; Address)
+- Date of Birth
+etc.
+----------------------------------------------
 TASK:
 1. Analyze the JSON input.
 2. Detect names, emails, phone numbers, identifiers.

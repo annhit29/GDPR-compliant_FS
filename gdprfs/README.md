@@ -116,3 +116,13 @@ i.e.
 
 Whenever we want to stop the external consent platform and the internal purpose platform, do Ctrl+C on both terminals.
 Whenever we want to stop the FUSE daemon, do in terminal1: `./reset_myfs_sudo.sh`
+
+
+# Ports:
+External: 5000
+Internal: 8000
+LLM analyzer: 5005 (why not, because it is not used)
+
+
+# LLM Analyzer
+For this, one needs an API key for the LLM model.

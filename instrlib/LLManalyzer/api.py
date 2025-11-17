@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, Response #jsonify
 from splitter import split_file
 from agent import agent
 import json
@@ -15,31 +15,22 @@ def analyze_file():
     results = []
 
     for chunk in chunks:
-        # 1. Run LLM → returns RAW JSON STRING
-        result = agent.run_sync(json.dumps({ # call the gpt model
+        result = agent.run_sync(json.dumps({
             "text": chunk.text,
             "known_users": known_users
         }))
-
-        raw = result.output  # RAW JSON AS STRING FROM GPT
-
-        # 2. Convert raw string → dict
-        try:
-            analysis_dict = json.loads(raw)
-        except Exception as e:
-            analysis_dict = {
-                "error": "LLM returned invalid JSON",
-                "raw_output": raw
-            }
-
-        # 3. Append to results
         results.append({
-            "index": chunk.index,
-            "metadata": chunk.metadata,
-            "analysis": analysis_dict
+            "chunk index": chunk.index,
+            "chunk metadata": chunk.metadata,
+            "analysis": json.loads(result.output)   # convert to dict
         })
 
-    return jsonify(results)
+    # pretty-print JSON
+    return Response(
+        json.dumps(results, indent=2, ensure_ascii=False),
+        mimetype="application/json"
+    )
+
 
 if __name__ == "__main__":
     app.run(port=5005)
