@@ -4,13 +4,24 @@
 
 set -e
 
-VENV_DIR=~/awscli-venv
+# VENV_DIR=~/awscli-venv
+VENV_DIR=~/gdprfs-venv
 PYTHON_VERSION=python3.12
 SITE_PACKAGES="$VENV_DIR/lib/$PYTHON_VERSION/site-packages"
 SYSTEM_FUSE_PATH="/usr/local/lib/$PYTHON_VERSION/dist-packages/fuse_python-1.0.9-py3.12-linux-x86_64.egg"
 
 echo "🔹 Activating virtual environment..."
 source "$VENV_DIR/bin/activate"
+
+echo "🔹 Checking/Installing poppler-utils (pdftotext)..."
+if ! command -v pdftotext &> /dev/null; then
+    echo "Installing poppler-utils..."
+    sudo apt update -y
+    sudo apt install -y poppler-utils
+    echo "✅ poppler-utils installed"
+else
+    echo "✅ poppler-utils already present"
+fi
 
 echo "🔹 Checking FUSE device group and permissions..."
 sudo groupadd fuse 2>/dev/null || true
@@ -66,5 +77,18 @@ pip install flask_sqlalchemy
 
 echo "Verifying Flask-SQLAlchemy installation..."
 python3 -c "import importlib.metadata; print('✅ Flask-SQLAlchemy version:', importlib.metadata.version('flask-sqlalchemy'))"
+
+echo "🔹 Installing Pydantic + Pydantic-AI..."
+# pip install "pydantic>=2" pydantic-ai
+pip install "pydantic>=2" pydantic-ai openai python-docx odfpy pandas openpyxl pdfminer.six
+
+python3 -c "import pydantic; print('✅ Pydantic version:', pydantic.__version__)"
+python3 -c "import pydantic_ai; print('✅ Pydantic-AI imported successfully')"
+python3 -c "import openai; print('✅ OpenAI package version:', openai.__version__)"
+python3 -c "import docx; print('✅ python-docx package version:', docx.__version__)"
+python3 -c "import odf; print('✅ odfpy imported successfully')"
+python3 -c "import pandas; print('✅ pandas package version:', pandas.__version__)"
+python3 -c "import openpyxl; print('✅ openpyxl package version:', openpyxl.__version__)"
+python3 -c "import pdfminer; print('✅ pdfminer.six package version:', pdfminer.__version__)"
 
 echo "🎉 Setup complete!"
