@@ -37,4 +37,4 @@ sudo chown $USER:$USER "$MNT"
 echo "Cleanup complete. In another terminal, you can now run:"
 echo "sudo PYTHONPATH=. python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other" # Use sudo to run the FUSE daemon as root in order to 1)Open /dev/fuse (to register and communicate with the kernel), and 2) Read/write /var/lib/gdprfs/upper and so make a copy in /var/lib/gdprfs/mirror
 echo "or in venv:"
-echo "sudo -E PYTHONPATH=. ~/awscli-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other"
+echo "sudo -E PYTHONPATH=. ~/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other"

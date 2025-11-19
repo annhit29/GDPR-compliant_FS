@@ -6,7 +6,7 @@ set -e
 
 # --- Define base paths ---
 BASE=~/MA3/Building_a_GDPR-compliant_file_system/instrlib
-VENV=~/awscli-venv
+VENV=~/gdprfs-venv
 
 # --- Step 1: External Consent Platform (port 5000) ---
 gnome-terminal -- bash -c "
