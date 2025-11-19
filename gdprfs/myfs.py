@@ -1,3 +1,4 @@
+from hashlib import sha256
 import threading
 from fuse import Fuse
 import fuse
@@ -16,6 +17,8 @@ from gdprfs.db_utils import update_file_mapping_for_upper, update_file_metadata,
 from gdprfs.models import File, Person
 from gdprfs.db_utils import Session
 import yaml
+import requests
+import json
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
 UPPER_DIR  = Path("/var/lib/gdprfs/upper")
@@ -97,6 +100,117 @@ def _delete_from_mirror(fuse_path: str):
 #     except Exception:
 #         print(f"[DEBUG] psutil failed: {e}")
 #     return False
+
+def update_file_people_from_llm(path_abs: str, llm_results: list):
+    """
+    Given llm_results = list of chunk analyses,
+    update File.people based on all persons found in all chunks.
+    """
+    from sqlalchemy import and_
+
+    print(f"[LLM] Updating DB mapping for file: {path_abs}")
+
+    with Session() as s:
+        # 1. Retrieve File entry
+        file_obj = s.query(File).filter(File.abs_path == path_abs).first()
+        if not file_obj:
+            print(f"[LLM] File not in DB yet → creating entry")
+            file_obj = File(abs_path=path_abs)
+            s.add(file_obj)
+            s.commit()
+
+        # 2. Reset existing mapping
+        file_obj.people.clear()
+
+        # 3. For each chunk, add detected persons
+        for chunk in llm_results:
+            persons = chunk["analysis"]["persons"]
+            for person_info in persons:
+                name = person_info["name"].strip()
+                first, *rest = name.split(" ")
+                last = " ".join(rest) if rest else ""
+
+                # Known user?
+                if person_info["is_known_user"]:
+                    person = s.query(Person).filter_by(id=person_info["user_id"]).first()
+
+                else:
+                    # Unknown → ensure entry exists in database
+                    person = (
+                        s.query(Person)
+                        .filter(and_(Person.first_name == first, Person.last_name == last))
+                        .first()
+                    )
+                    if not person:
+                        person = Person(
+                            first_name=first,
+                            last_name=last,
+                            uid=None,
+                            registered=False
+                        )
+                        s.add(person)
+                        s.commit()
+                        print(f"[LLM] Added new unregistered user: {first} {last}")
+
+                # Associate with file
+                if person not in file_obj.people:
+                    file_obj.people.append(person)
+
+        s.commit()
+        print(f"[LLM] Updated file_people for {len(file_obj.people)} persons")
+
+def run_llm_analysis_and_update_db(path_abs: str):
+    """
+    Call the LLM analyzer for the given absolute file path,
+    then update the gdprfs DB File.people accordingly.
+    """
+    print(f"[LLM] Running LLM analyzer on file: {path_abs}")
+
+    data = Path(path_abs).read_bytes()
+    new_hash = sha256(data).hexdigest()
+    
+    # 1. Load known users from local DB
+    with Session() as s:
+        file_obj = s.query(File).filter_by(abs_path=path_abs).first()
+
+        # If file exists and hash matches, skip expensive LLM
+        if file_obj and file_obj.sha256 == new_hash:
+            print(f"[LLM] SKIPPED — content unchanged (hash match).")
+            return
+
+        print(f"[LLM] Running LLM analyzer on file: {path_abs}")
+
+        known_users = [
+            {"user_id": person.id,
+             "full_name": f"{person.first_name} {person.last_name}"}
+            for person in s.query(Person).filter_by(registered=True)
+        ]
+
+    # 2. Call LLM analyzer API
+    try:
+        resp = requests.post(
+            "http://127.0.0.1:5005/analyze-file",
+            json={"path": path_abs, "known_users": known_users}
+        )
+        results = resp.json()
+        
+        print("[LLM] Raw analyzer result:")
+        print(json.dumps(results, indent=2))
+
+    except Exception as e:
+        print(f"[LLM] ERROR: analyzer failed: {e}")
+        return
+
+    # 3. Update DB mapping (critical!)
+    update_file_people_from_llm(path_abs, results)
+
+    # 4. Store new hash in DB
+    with Session() as s:
+        file_obj = s.query(File).filter_by(abs_path=path_abs).first()
+        if file_obj:
+            file_obj.sha256 = new_hash
+            s.commit()
+            print(f"[LLM] Updated content hash for {path_abs}")
 
 def sync_users_from_external():
     """
@@ -509,6 +623,12 @@ class MyFS(Fuse):
         print(f"[WRITE] path={path} → synced to mirror")
 
         # update_file_mapping_for_upper(str(p.resolve()), context="write")
+        try:
+            print(f"[LLM] Running LLM analysis after write for {path}")
+            run_llm_analysis_and_update_db(str(p.resolve()))
+        except Exception as e:
+            print(f"[LLM] WARNING: LLM update failed after write: {e}")
+
 
         return len(data) # Returning len(data) tells FUSE “OK, I wrote everything.”
 
@@ -717,6 +837,13 @@ class MyFS(Fuse):
 
         except Exception as e:
             print(f"[DB] Warn: mapping after rename failed for {new}: {e}")
+    
+        try:
+            if new_p.is_file(): # only run LLM analysis for files only, not for folders
+                print(f"[LLM] Running LLM analysis after rename for {new}")
+                run_llm_analysis_and_update_db(str(new_p.resolve()))
+        except Exception as e:
+            print(f"[LLM] WARNING: LLM update after rename failed: {e}")
 
         return 0
 

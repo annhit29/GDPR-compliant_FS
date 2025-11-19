@@ -19,6 +19,8 @@ class File(Base):
     modified_at = Column(String)
     accessed_at = Column(String)
     
+    sha256 = Column(String(64), nullable=True) # for LLM
+
     #todo: last or all, à voir
     last_action = Column(String) # "read", "write", "rename", etc.
 
