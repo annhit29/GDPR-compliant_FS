@@ -1,3 +1,5 @@
+from errno import EACCES
+import getpass
 from hashlib import sha256
 import threading
 from fuse import Fuse
@@ -329,7 +331,6 @@ def events_for_path(path: str, event_type: str):
         uid = "anonymous"
     if event_type == 'Use':
         return [Event('Use', fid, uid)]
-        # return [Event('Use', fid, 'marketing', uid)]
     elif event_type == 'Collect':
         return [Event('Collect', fid, 'marketing')]
     elif event_type == 'Delete':
@@ -363,9 +364,9 @@ def events_for_read(path):
 
         # Case 1: No personal data linked → free access, but still log as "nonpersonal"
         if not file_obj or not file_obj.people:
-            print(f"[GDPR] {fid} contains no personal data — allowed freely")
-            return [Event("Use", fid, "noone")]
-            # return [Event("Use", fid, "nonpersonal", "noone")] #todo: how to set p = "nonpersonal"?
+            print(f"[GDPR] {fid} contains no personal data, so no enforcement needed")
+            actor = getpass.getuser()
+            return [Event("UseNonPII", fid, actor)]
 
         # Case 2: Personal data → one Use per data subject (registered or not)
         for person in file_obj.people:
@@ -390,6 +391,7 @@ def events_for_read(path):
 
 # ========== SCHEMA ==========
 schema = Schema()
+schema.add("UseNonPII", [str, str]) # for reads of non-PII files
 schema.add('Use', [str, str]) # for reads
 schema.add('Delete', [str])    # for deletes
 schema.add('Collect', [str, str]) # for writes
@@ -415,7 +417,8 @@ def none_handler(event_name, event_args, response, *args, **kwargs):
 
 suppression_handlers = {('Use'): none_handler}
 
-causation_handlers = {('Delete'): none_handler,
+causation_handlers = {('UseNonPII'): none_handler,
+                        ('Delete'): none_handler,
                         ('Collect'): none_handler,
                       ('Consent'): none_handler,
                         ('Revoke'): none_handler,
@@ -427,7 +430,6 @@ causation_handlers = {('Delete'): none_handler,
 def read_mapping(action):  
     print(f'[read_mapping DEBUG] {str(action)}')
     return Event('Use', str(action), 'userid1')
-    # return Event('Use', str(action), 'marketing', 'userid1')
 # todo: or the following?
 # def read_mapping(action):
     # print("[DEBUG InstrumentationMapping] remapping event", action)
@@ -608,11 +610,13 @@ class MyFS(Fuse):
 
         # --- skip temp files ---
         if not _is_temp_name(path):
+            # print("before trying to update mapping in _write")
             try:
                 update_file_mapping_for_upper(str(p.resolve()), context="write")
                 update_file_metadata(str(p.resolve()), "write")
                 
-                self._emit_collect_event(path) # solves the issue of no Collect event for direct writes ending with numbers
+                # print("PRINT A COLLECT in _write")
+                # self._emit_collect_event(path) # solves the issue of no Collect event for direct writes ending with numbers
             except Exception as e:
                 print(f"[DB] Warn: mapping update failed for {p}: {e}")
         else:
@@ -800,6 +804,21 @@ class MyFS(Fuse):
         if not old_p.exists():
             from errno import ENOENT
             raise OSError(ENOENT, f"No such file: {old}")
+
+        # ---------- GDPR ENFORCEMENT FOR FINAL SAVE ----------
+        # gedit pattern: .goutputstream-XXXX  -> real filename
+        if os.path.basename(old).startswith(".goutputstream-") and not _is_temp_name(new):
+            # Ask: is Use(fid, uid) allowed for this final file?
+            events = events_for_read(new)
+            cau_flag, sup_flag, _, _ = logger.log(events, threading.Event(), False)
+            print(f"[GDPR] rename check for {new}: cau_flag={cau_flag}, sup_flag={sup_flag}")
+
+            if sup_flag:
+                print(f"[GDPR] Blocking final save for {new} due to missing consent")
+                # IMPORTANT: do NOT rename on disk, just fail
+                raise OSError(EACCES, "GDPR policy: write requires external consent")
+        # ------------------------------------------------------
+
 
         _ensure_parent(new_p)
         os.rename(old_p, new_p)
