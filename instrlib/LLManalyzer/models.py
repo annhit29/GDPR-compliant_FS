@@ -8,7 +8,7 @@ class PersonHit(BaseModel):
 
 class ChunkAnalysis(BaseModel):
     contains_personal_data: bool
-    persons: List[PersonHit]
-    categories: List[str]
+    persons: List[PersonHit] #list of {name, is_known_user, user_id, confidence}
+    categories: List[str] #["Name", "Email", "Phone", "Address", ...]
     block_recommendation: bool # true if the file chunk should be blocked; false otherwise
     explanation: str
