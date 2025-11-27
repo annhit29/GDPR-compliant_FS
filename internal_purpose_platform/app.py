@@ -1,5 +1,6 @@
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+from gdprfs.models import Person
 
 from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, session, flash
@@ -7,6 +8,8 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from models import db, InternalUser, CurrentSession
 import requests, yaml, os
 import json
+from sqlalchemy import func
+
 """
 Main Flask app (with signup/login/logout + StartSession/StopSession routes).
 """
@@ -21,6 +24,18 @@ db.init_app(app)
 
 with app.app_context():
     db.create_all()
+
+def merge_person_into(s, dup_person, registered_person):
+    """Merge duplicated external user dup_person into registered external user registered_person in the given session `s`."""
+    # Move file mappings
+    for f in dup_person.files:
+        if registered_person not in f.people:
+            f.people.append(registered_person)
+        if dup_person in f.people:
+            f.people.remove(dup_person)
+
+    # Delete duplicate
+    s.delete(dup_person)
 
 # --- Load reasons.yaml ---
 REASONS_PATH = os.path.join(os.path.dirname(__file__), "purposes_and_reasons.yaml")
@@ -58,7 +73,7 @@ def merge_alerts():
 
 @app.post("/resolve_merge")
 def resolve_merge():
-    alias = request.form["alias"].lower()
+    alias = request.form["alias"].strip().lower()
     person_id = int(request.form["person_id"])
     action = request.form["action"]
 
@@ -67,7 +82,9 @@ def resolve_merge():
 
     if action == "merge":
         with Session() as s:
+            registered_person = s.query(Person).get(person_id)
 
+            # 1. Store alias → canonical person_id mapping (see NameAlias model and name_aliases table)
             existing = s.query(NameAlias).filter_by(alias=alias).first()
             if not existing:
                 # then store alias → person link
@@ -76,7 +93,25 @@ def resolve_merge():
                 s.commit()
             # else: do nothing → alias already stored
 
-    # Remove this alert from file
+            # 2. Find duplicates to merge
+            dup = (
+                s.query(Person)
+                .filter(Person.id != registered_person.id)
+                .filter(
+                    (func.lower(Person.first_name) == alias.lower()) |
+                    (func.lower(Person.last_name) == alias.lower())
+                )
+                .first()
+            )
+
+
+
+            if dup and dup.id != registered_person.id:
+                merge_person_into(s, dup, registered_person)
+                s.commit()
+            #else: no duplicate found → nothing to merge
+            
+    # Remove this alert from the merge_alerts.json file
     data = load_merge_alerts()
     if data:
         new_alerts = [
