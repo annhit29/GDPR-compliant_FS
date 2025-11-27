@@ -4,7 +4,6 @@ from gdprfs.models import Person
 
 from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, session, flash
-# from gdprfs.merge_alerts import load_merge_alerts
 from models import db, InternalUser, CurrentSession
 import requests, yaml, os
 import json

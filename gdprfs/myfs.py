@@ -15,13 +15,13 @@ from instrlib.pep import PEP, InstrumentationMapping
 from instrlib.event import Event, Functional
 import os, shutil
 from pathlib import Path
-from gdprfs.db_utils import update_file_mapping_for_upper, update_file_metadata, mark_file_deleted, _is_temp_name
-from gdprfs.models import File, Person
-from gdprfs.db_utils import Session
+from gdprfs.db_utils import Session, update_file_mapping_for_upper, update_file_metadata, mark_file_deleted, _is_temp_name
+from gdprfs.models import File, Person, NameAlias
 import yaml
 import requests
 import json
 from gdprfs.merge_alerts import save_merge_alerts_for_ui
+from sqlalchemy import and_, func
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
 UPPER_DIR  = Path("/var/lib/gdprfs/upper")
@@ -109,7 +109,6 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
     Given llm_results = list of chunk analyses,
     update File.people based on all persons found in all chunks.
     """
-    from sqlalchemy import and_
 
     print(f"[LLM] Updating DB mapping for file: {path_abs}")
 
@@ -136,24 +135,36 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                 # Known user?
                 if person_info["is_known_user"]:
                     person = s.query(Person).filter_by(id=person_info["user_id"]).first()
-
                 else:
-                    # Unknown → ensure entry exists in database
-                    person = (
-                        s.query(Person)
-                        .filter(and_(Person.first_name == first, Person.last_name == last))
+                    # First, check if this token is a known alias validated by the internal UI
+                    alias_norm = name.strip().lower()
+                    alias_row = (
+                        s.query(NameAlias)
+                        .filter(func.lower(NameAlias.alias) == alias_norm)
                         .first()
                     )
-                    if not person:
-                        person = Person(
-                            first_name=first,
-                            last_name=last,
-                            uid=None,
-                            registered=False
+
+                    if alias_row:
+                        # Human already confirmed: alias → canonical person
+                        person = s.get(Person, alias_row.person_id)
+                        print(f"[LLM duplicate DS / alias already merged] Already-merged alias '{name}' which is the registered person id={person.id}")
+                    else:
+                        # Unknown → ensure entry exists in database
+                        person = (
+                            s.query(Person)
+                            .filter(and_(Person.first_name == first, Person.last_name == last))
+                            .first()
                         )
-                        s.add(person)
-                        s.commit()
-                        print(f"[LLM] Added new unregistered user: {first} {last}")
+                        if not person:
+                            person = Person(
+                                first_name=first,
+                                last_name=last,
+                                uid=None,
+                                registered=False
+                            )
+                            s.add(person)
+                            s.commit()
+                            print(f"[LLM unregistered DS] Added new unregistered user: {first} {last}")
 
                 # Associate with file
                 if person not in file_obj.people:
@@ -161,6 +172,12 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
 
         # detect partial matches that require internal confirmation
         alerts = []
+
+        # Preload human-confirmed aliases to avoid spamming alerts
+        known_aliases = {
+            a.alias.lower()
+            for a in s.query(NameAlias).all()
+        }
 
         # Build a lookup: last name → registered user
         registered_people = {
@@ -174,12 +191,18 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                     continue  # skip exact matches
                 
                 detected = person_info["name"].strip()
+                detected_norm = detected.lower()
+
+                # If this token is already a validated alias, skip creating an alert
+                if detected_norm in known_aliases:
+                    continue
+
                 det_first, *rest = detected.split()
                 det_last = " ".join(rest) if rest else ""
 
                 # check if last name matches a registered user
                 for (first, last), reg_person in registered_people.items():
-                    if det_last.lower() == last.lower() or detected.lower() == last.lower():
+                    if det_last.lower() == last.lower() or detected_norm == last.lower():
                         alerts.append({
                             "alias": detected,
                             "candidate": f"{reg_person.first_name} {reg_person.last_name}",
@@ -189,7 +212,7 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
         # If alerts exist → save for internal UI
         if alerts:
             save_merge_alerts_for_ui(path_abs, alerts)
-            print(f"[LLM] Merge alerts created for {path_abs}: {alerts}")
+            print(f"[LLM create merge alert] Merge alerts created for {path_abs}: {alerts}")
 
         s.commit()
         print(f"[LLM] Updated file_people for {len(file_obj.people)} persons")
