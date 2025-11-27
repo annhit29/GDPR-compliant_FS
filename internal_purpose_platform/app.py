@@ -116,7 +116,6 @@ def resolve_merge():
         new_alerts = [
             a for a in data["alerts"]
             if a["alias"].lower() != alias 
-            # if not (a["alias"].lower() == alias and a["person_id"] == person_id)
         ]
 
         if new_alerts:
@@ -124,10 +123,12 @@ def resolve_merge():
                 "file": data["file"],
                 "alerts": new_alerts
             }, indent=2))
+            return redirect("/merge_alerts")   # return to merge_alerts page because there are still alias to resolve
         else:
             MERGE_ALERT_FILE.unlink(missing_ok=True)
+            return redirect("/")               # go back to main dashboard
 
-    return redirect("/merge_alerts")
+    return redirect("/")
 
 # --- Authentication Routes ---
 @app.route("/signup", methods=["GET", "POST"])
