@@ -16,7 +16,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 ENV_PATH = CURRENT_DIR.parent.parent / ".env"
 
 load_dotenv(ENV_PATH)
-assert os.getenv("OPENAI_API_KEY"), "❌ OPENAI_API_KEY not found in .env"
+assert os.getenv("OPENAI_API_KEY"), "OPENAI_API_KEY not found in .env"
 
 
 # ------------------------------------------------------
@@ -25,6 +25,7 @@ assert os.getenv("OPENAI_API_KEY"), "❌ OPENAI_API_KEY not found in .env"
 
 agent = Agent[ChunkAnalysis](
     model="gpt-5-nano",
+    output_type=ChunkAnalysis,
 instructions="""
 You will receive a **JSON string** as the user prompt.
 Parse this JSON into two fields:
@@ -75,31 +76,7 @@ STRICT OUTPUT RULES:
 - Output ONLY valid JSON
 - No text outside the JSON object
 - No markdown, no comments
-- Must match EXACT schema:
-
-{
-  "contains_personal_data": bool,
-  "persons": [
-    {
-      "name": str,
-      "is_known_user": bool,
-      "user_id": int | null,
-      "confidence": float
-    }
-  ],
-  "categories": [str],
-  "block_recommendation": bool,
-  "explanation": str
-}
-
-Note: categories can include:
-- Name (first; Last; Full)
-- Email
-- Phone Number
-- Identifier
-- Location (City; Country; Address)
-- Date of Birth
-etc.
+- Must match EXACT schema
 ----------------------------------------------
 TASK:
 1. Analyze the JSON input.
