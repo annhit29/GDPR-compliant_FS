@@ -4,7 +4,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 from pydantic_ai import Agent
-from instrlib.LLManalyzer.models import ChunkAnalysis
+from models import ChunkAnalysis
 from dotenv import load_dotenv
 import os
 from pathlib import Path
@@ -13,7 +13,7 @@ from pathlib import Path
 # Load API key from .env
 # ------------------------------------------------------
 CURRENT_DIR = Path(__file__).resolve().parent
-ENV_PATH = CURRENT_DIR.parent.parent / ".env"
+ENV_PATH = CURRENT_DIR.parent / ".env"
 
 load_dotenv(ENV_PATH)
 assert os.getenv("OPENAI_API_KEY"), "OPENAI_API_KEY not found in .env"
@@ -46,7 +46,7 @@ known_users = parsed_json["known_users"]
 
 ----------------------------------------------
 CONFIDENCE SCORING RULES (for not have inventing confidence scores)
-----------------------------------------------
+----------------------------------------------update_file_people_from_llm
 
 ### Name confidence:
 - 0.95 - 1.00 → exact match of known user's full_name (case-insensitive)

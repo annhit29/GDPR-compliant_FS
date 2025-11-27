@@ -34,7 +34,17 @@ class Person(Base):
     last_name = Column(String)
     registered = Column(Boolean, default=False)  # 0 = False  = potential user or not-yet-registered user, 1 = True = registered user
     files = relationship("File", secondary=person_file_map, back_populates="people")
+    aliases = relationship("NameAlias", backref="person", cascade="all, delete") # list of NameAlias objects to allow the LLM auto-detects aliases
+
+class NameAlias(Base):
+    __tablename__ = "name_alias"
+
+    id = Column(Integer, primary_key=True)
+    alias = Column(String, unique=True, nullable=False)
+    person_id = Column(Integer, ForeignKey("person.id"), nullable=False)
 
 # Shared engine + session
-ENGINE = create_engine("sqlite:///gdprfs.db")
+# ENGINE = create_engine("sqlite:///gdprfs.db")
+ENGINE = create_engine("sqlite:////home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs.db")
 Session = sessionmaker(bind=ENGINE)
+print("[GDPRFS] Using DB at:", ENGINE.url)

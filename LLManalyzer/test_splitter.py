@@ -1,7 +1,7 @@
 import sys, os
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from instrlib.LLManalyzer.splitter import split_file
+from LLManalyzer.splitter import split_file
 
 
 def test(path):

@@ -1,7 +1,12 @@
+import sys, os
+sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
+
+from pathlib import Path
 from flask import Flask, render_template, request, redirect, url_for, session, flash
+# from gdprfs.merge_alerts import load_merge_alerts
 from models import db, InternalUser, CurrentSession
 import requests, yaml, os
-
+import json
 """
 Main Flask app (with signup/login/logout + StartSession/StopSession routes).
 """
@@ -21,6 +26,74 @@ with app.app_context():
 REASONS_PATH = os.path.join(os.path.dirname(__file__), "purposes_and_reasons.yaml")
 with open(REASONS_PATH, "r") as f:
     PURPOSES = yaml.safe_load(f)
+
+MERGE_ALERT_FILE = Path("/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/merge_alerts.json")
+def load_merge_alerts():
+    if not MERGE_ALERT_FILE.exists():
+        return None
+    try:
+        return json.loads(MERGE_ALERT_FILE.read_text())
+    except Exception:
+        return None
+    
+@app.route("/merge_alerts")
+def merge_alerts():
+    if "uid" not in session:
+        return redirect(url_for("login"))
+
+    user = InternalUser.query.filter_by(uid=session["uid"]).first()
+    current = CurrentSession.query.filter_by(uid=user.uid, active=True).first()
+
+    alerts_data = load_merge_alerts()
+    alerts = alerts_data["alerts"] if alerts_data else None
+
+    return render_template(
+        "index.html",
+        user=user,
+        current=current,
+        purposes=PURPOSES,
+        merge_alerts=alerts
+    )
+
+
+@app.post("/resolve_merge")
+def resolve_merge():
+    alias = request.form["alias"].lower()
+    person_id = int(request.form["person_id"])
+    action = request.form["action"]
+
+    from gdprfs.db_utils import Session
+    from gdprfs.models import NameAlias
+
+    if action == "merge":
+        with Session() as s:
+
+            existing = s.query(NameAlias).filter_by(alias=alias).first()
+            if not existing:
+                # then store alias → person link
+                new_alias = NameAlias(alias=alias, person_id=person_id)
+                s.add(new_alias)
+                s.commit()
+            # else: do nothing → alias already stored
+
+    # Remove this alert from file
+    data = load_merge_alerts()
+    if data:
+        new_alerts = [
+            a for a in data["alerts"]
+            if a["alias"].lower() != alias 
+            # if not (a["alias"].lower() == alias and a["person_id"] == person_id)
+        ]
+
+        if new_alerts:
+            MERGE_ALERT_FILE.write_text(json.dumps({
+                "file": data["file"],
+                "alerts": new_alerts
+            }, indent=2))
+        else:
+            MERGE_ALERT_FILE.unlink(missing_ok=True)
+
+    return redirect("/merge_alerts")
 
 # --- Authentication Routes ---
 @app.route("/signup", methods=["GET", "POST"])
@@ -83,9 +156,16 @@ def index():
         return redirect(url_for("login"))
     user = InternalUser.query.filter_by(uid=session["uid"]).first()
     current = CurrentSession.query.filter_by(uid=user.uid, active=True).first()
-    return render_template("index.html", user=user, purposes=PURPOSES, current=current)
-
-# --- Start/Stop session routes ---
+    # return render_template("index.html", user=user, purposes=PURPOSES, current=current)
+    alerts = load_merge_alerts()
+    return render_template(
+        "index.html",
+        user=user,
+        purposes=PURPOSES,
+        current=current,
+        merge_alerts=alerts["alerts"] if alerts else None
+    )
+# --- Start/Stop session endpoints ---
 @app.route("/start_session", methods=["POST"])
 def start_session():
     uid = session.get("uid")

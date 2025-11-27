@@ -30,7 +30,7 @@ def split_excel(path):
     """Splits an Excel file into chunks, one per row. Same as CSV."""
     chunks = []
     df = pd.read_excel(path)
-    for i, row in df.iterrows():
+    for i, row in df.iterrows(): # nested for loop if many sheets in an excel file
         text = " ".join(str(x) for x in row.values)
         chunks.append(Chunk(i, text, metadata=row.to_dict()))
     return chunks
@@ -81,4 +81,8 @@ def split_file(path):
         return split_odt(path)
     if ext == ".pdf":
         return split_pdf(path)
+    # if no extension → treat as txt
+    if ext == "":
+        return split_txt(path)
+
     raise ValueError(f"Unsupported file type: {ext}")

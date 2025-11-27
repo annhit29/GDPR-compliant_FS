@@ -61,4 +61,37 @@
     </button>
   </form>
 </body>
+
+{% if merge_alerts %}
+  <hr>
+  <h2 style="color:#d9534f;">We detected potentially mergable names</h2>
+
+  {% for alert in merge_alerts %}
+    <div style="border:1px solid #aaa; padding:10px; margin-bottom:10px;">
+      <p>
+        <b>Token detected:</b> {{ alert.alias }}<br>
+        <b>Possible match:</b> {{ alert.candidate }} (user_id={{ alert.person_id }})
+      </p>
+
+      <form method="post" action="/resolve_merge" style="display:inline;">
+        <input type="hidden" name="alias" value="{{ alert.alias }}">
+        <input type="hidden" name="person_id" value="{{ alert.person_id }}">
+        <button name="action" value="merge" 
+                style="background:#5cb85c;color:white;padding:5px 10px;">
+          Yes, same person
+        </button>
+      </form>
+
+      <form method="post" action="/resolve_merge" style="display:inline;">
+        <input type="hidden" name="alias" value="{{ alert.alias }}">
+        <input type="hidden" name="person_id" value="{{ alert.person_id }}">
+        <button name="action" value="no" 
+                style="background:#d9534f;color:white;padding:5px 10px;">
+          No
+        </button>
+      </form>
+    </div>
+  {% endfor %}
+{% endif %}
+
 </html>

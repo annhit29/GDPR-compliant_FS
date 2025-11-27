@@ -4,8 +4,8 @@ import sys, os
 # import paths
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from instrlib.LLManalyzer.agent import agent
-from instrlib.LLManalyzer.models import ChunkAnalysis
+from LLManalyzer.agent import agent
+from LLManalyzer.models import ChunkAnalysis
 from gdprfs.models import Session, Person
 
 

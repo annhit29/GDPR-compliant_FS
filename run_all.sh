@@ -24,7 +24,15 @@ python app.py;
 exec bash
 "
 
-# --- Step 3: FUSE daemon (requires root privileges) ---
+# --- Step 3: LLM Analyzer (port 5005) ---
+gnome-terminal -- bash -c "
+cd $BASE/LLManalyzer;
+source $VENV/bin/activate;
+python api.py;
+exec bash
+"
+
+# --- Step 4: FUSE daemon (requires root privileges) ---
 gnome-terminal -- bash -c "
 cd $BASE;
 source $VENV/bin/activate;

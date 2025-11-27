@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from models import Base, ENGINE, Session, File, Person
+from models import Base, ENGINE, Session, File, Person, NameAlias
 
 # --- Setup the database ---
 Base.metadata.create_all(ENGINE) #create empty tables of gdprfs/models.py

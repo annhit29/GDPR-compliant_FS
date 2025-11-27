@@ -21,6 +21,7 @@ from gdprfs.db_utils import Session
 import yaml
 import requests
 import json
+from gdprfs.merge_alerts import save_merge_alerts_for_ui
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
 UPPER_DIR  = Path("/var/lib/gdprfs/upper")
@@ -158,6 +159,38 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                 if person not in file_obj.people:
                     file_obj.people.append(person)
 
+        # detect partial matches that require internal confirmation
+        alerts = []
+
+        # Build a lookup: last name → registered user
+        registered_people = {
+            (p.first_name.lower(), p.last_name.lower()): p
+            for p in s.query(Person).filter_by(registered=True)
+        }
+
+        for chunk in llm_results:
+            for person_info in chunk["analysis"]["persons"]: # list of {name, is_known_user, user_id, confidence}
+                if person_info["is_known_user"]: # if is_known_user = True
+                    continue  # skip exact matches
+                
+                detected = person_info["name"].strip()
+                det_first, *rest = detected.split()
+                det_last = " ".join(rest) if rest else ""
+
+                # check if last name matches a registered user
+                for (first, last), reg_person in registered_people.items():
+                    if det_last.lower() == last.lower() or detected.lower() == last.lower():
+                        alerts.append({
+                            "alias": detected,
+                            "candidate": f"{reg_person.first_name} {reg_person.last_name}",
+                            "person_id": reg_person.id
+                        })
+
+        # If alerts exist → save for internal UI
+        if alerts:
+            save_merge_alerts_for_ui(path_abs, alerts)
+            print(f"[LLM] Merge alerts created for {path_abs}: {alerts}")
+
         s.commit()
         print(f"[LLM] Updated file_people for {len(file_obj.people)} persons")
 
@@ -167,6 +200,12 @@ def run_llm_analysis_and_update_db(path_abs: str):
     then update the gdprfs DB File.people accordingly.
     """
     print(f"[LLM] Running LLM analyzer on file: {path_abs}")
+
+    # Skip temporary editor files
+    if os.path.basename(path_abs).startswith(".goutputstream-"):
+        print(f"[LLM] Skipping temp file for analysis: {path_abs}")
+        return
+
 
     data = Path(path_abs).read_bytes()
     new_hash = sha256(data).hexdigest()
@@ -626,13 +665,15 @@ class MyFS(Fuse):
         _sync_to_mirror(path)
         print(f"[WRITE] path={path} → synced to mirror")
 
-        # update_file_mapping_for_upper(str(p.resolve()), context="write")
-        try:
-            print(f"[LLM] Running LLM analysis after write for {path}")
-            run_llm_analysis_and_update_db(str(p.resolve()))
-        except Exception as e:
-            print(f"[LLM] WARNING: LLM update failed after write: {e}")
-
+        # --- LLM should NOT run for temp files ---
+        if not _is_temp_name(path):
+            try:
+                print(f"[LLM] Running LLM analysis after write for {path}")
+                run_llm_analysis_and_update_db(str(p.resolve()))
+            except Exception as e:
+                print(f"[LLM] WARNING: LLM update failed after write: {e}")
+        else:
+            print(f"[LLM] Skipping LLM analysis for temp file {path}")
 
         return len(data) # Returning len(data) tells FUSE “OK, I wrote everything.”
 
