@@ -24,6 +24,11 @@ def split_csv(path):
         reader = csv.DictReader(f)
         for i, row in enumerate(reader):
             chunks.append(Chunk(i, " ".join(row.values()), metadata=row))
+        
+        print("HEADER:", reader.fieldnames)
+        for i, row in enumerate(reader):
+            print("ROW:", row)
+
     return chunks
 
 def split_excel(path):
