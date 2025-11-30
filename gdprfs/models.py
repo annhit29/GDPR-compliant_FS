@@ -47,4 +47,4 @@ class NameAlias(Base):
 # ENGINE = create_engine("sqlite:///gdprfs.db")
 ENGINE = create_engine("sqlite:////home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs.db")
 Session = sessionmaker(bind=ENGINE)
-print("[GDPRFS] Using DB at:", ENGINE.url)
+# print("[GDPRFS] Using DB at:", ENGINE.url)

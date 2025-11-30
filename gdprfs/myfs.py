@@ -619,11 +619,7 @@ class MyFS(Fuse):
         raise OSError(ENOENT, "No such file or directory")
 
     def open(self, path, flags):
-        #todo 10h11: testing
         print("in open")
-        # if self._is_temp_name(path):
-        #     print("TEMP FILE IGNORED:", path)
-        #     return 0
 
         # allow access if the path exists in /upper
         # print(f"[DEBUG open] called with path={path}, flags={flags}", flush=True)
@@ -637,14 +633,7 @@ class MyFS(Fuse):
 
     def read(self, path, size, offset, fh=None):
         print("read file")
-    
-        # if _should_ignore():
-        #     # Don’t trigger Use event or log DB update
-        #     with open(_upper(path), "rb") as f:
-        #         f.seek(offset)
-        #         return f.read(size)
-        # detect misrouted write()
-        # so mimic FUSE def write()
+
         if isinstance(size, (bytes, bytearray)): #if size is data instead of int
             print(f"[WRITE] Misrouted write() detected: redirecting safely to raw write for {path}")
             return self._write(path, size, offset, fh)
