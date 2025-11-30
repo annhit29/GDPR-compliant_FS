@@ -37,10 +37,10 @@ class Person(Base):
     aliases = relationship("NameAlias", backref="person", cascade="all, delete") # list of NameAlias objects to allow the LLM auto-detects aliases
 
 class NameAlias(Base):
-    __tablename__ = "name_alias"
+    __tablename__ = "alias_person_map"
 
     id = Column(Integer, primary_key=True)
-    alias = Column(String, unique=True, nullable=False)
+    alias = Column(String, unique=True, nullable=False) # all in lowercase, for easy matching
     person_id = Column(Integer, ForeignKey("person.id"), nullable=False)
 
 # Shared engine + session

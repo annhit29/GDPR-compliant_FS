@@ -85,7 +85,7 @@ def resolve_merge():
             registered_person = s.query(Person).get(person_id)
 
 
-            # 1. Store alias → canonical person_id mapping (see NameAlias model and name_aliases table)
+            # 1. Store alias → canonical person_id mapping (see NameAlias model and alias_person_map table)
             existing = s.query(NameAlias).filter_by(alias=alias).first()
             if not existing:
                 # then store alias → person link
