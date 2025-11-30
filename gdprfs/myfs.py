@@ -16,12 +16,11 @@ from instrlib.event import Event, Functional
 import os, shutil
 from pathlib import Path
 from gdprfs.db_utils import Session, update_file_mapping_for_upper, update_file_metadata, mark_file_deleted, _is_temp_name
-from gdprfs.models import File, Person, NameAlias
+from gdprfs.models import File, Person
 import yaml
 import requests
 import json
-from gdprfs.merge_alerts import save_merge_alerts_for_ui
-from sqlalchemy import and_, func
+from gdprfs.llm import update_file_people_from_llm
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
 UPPER_DIR  = Path("/var/lib/gdprfs/upper")
@@ -38,11 +37,6 @@ Thus,
 - Users never touch /mirror directly
 - Only our Python FUSE daemon (running as root) reads/writes there: through _sync_to_mirror() and _delete_from_mirror()
 - We can see what's inside only if we use sudo
-
-ann20010929@ann20010929-ThinkPad-P16s-Gen-3:~/MA3/Building_a_GDPR-compliant_file_system/instrlib$ ls /var/lib/gdprfs/upper
-test.txt
-ann20010929@ann20010929-ThinkPad-P16s-Gen-3:~/MA3/Building_a_GDPR-compliant_file_system/instrlib$ ls /var/lib/gdprfs/mirror
-ls: cannot open directory '/var/lib/gdprfs/mirror': Permission denied
 """
 
 # safely remove stale temp files .goutputstream-XXXXXX on mount startup:
@@ -88,134 +82,6 @@ def _delete_from_mirror(fuse_path: str):
     dst = _mirror(fuse_path)
     if dst.exists():
         dst.unlink()
-
-# import psutil
-
-# IGNORED = {"nautilus", "gio", "tracker-miner-fs", "gvfsd-metadata", "tumblerd"}
-
-# def _should_ignore():
-#     try:
-#         for proc in psutil.Process().parents():
-#             print(f"[DEBUG] Parent process: {proc.name()} (pid={proc.pid})")
-#             if proc.name() in IGNORED:
-#                 print(f"[DEBUG] Ignoring system read from {proc.name()}")
-#                 return True
-#     except Exception:
-#         print(f"[DEBUG] psutil failed: {e}")
-#     return False
-
-def update_file_people_from_llm(path_abs: str, llm_results: list):
-    """
-    Given llm_results = list of chunk analyses,
-    update File.people based on all persons found in all chunks.
-    """
-
-    print(f"[LLM] Updating DB mapping for file: {path_abs}")
-
-    with Session() as s:
-        # 1. Retrieve File entry
-        file_obj = s.query(File).filter(File.abs_path == path_abs).first()
-        if not file_obj:
-            print(f"[LLM] File not in DB yet → creating entry")
-            file_obj = File(abs_path=path_abs)
-            s.add(file_obj)
-            s.commit()
-
-        # 2. Reset existing mapping
-        file_obj.people.clear()
-
-        # 3. For each chunk, add detected persons
-        for chunk in llm_results:
-            persons = chunk["analysis"]["persons"]
-            for person_info in persons:
-                name = person_info["name"].strip()
-                first, *rest = name.split(" ")
-                last = " ".join(rest) if rest else ""
-
-                # Known user?
-                if person_info["is_known_user"]:
-                    person = s.query(Person).filter_by(id=person_info["user_id"]).first()
-                else:
-                    # First, check if this token is a known alias validated by the internal UI
-                    alias_norm = name.strip().lower()
-                    alias_row = (
-                        s.query(NameAlias)
-                        .filter(func.lower(NameAlias.alias) == alias_norm)
-                        .first()
-                    )
-
-                    if alias_row:
-                        # Human already confirmed: alias → canonical person
-                        person = s.get(Person, alias_row.person_id)
-                        print(f"[LLM duplicate DS / alias already merged] Already-merged alias '{name}' which is the registered person id={person.id}")
-                    else:
-                        # Unknown → ensure entry exists in database
-                        person = (
-                            s.query(Person)
-                            .filter(and_(Person.first_name == first, Person.last_name == last))
-                            .first()
-                        )
-                        if not person:
-                            person = Person(
-                                first_name=first,
-                                last_name=last,
-                                uid=None,
-                                registered=False
-                            )
-                            s.add(person)
-                            s.commit()
-                            print(f"[LLM unregistered DS] Added new unregistered user: {first} {last}")
-
-                # Associate with file
-                if person not in file_obj.people:
-                    file_obj.people.append(person)
-
-        # detect partial matches that require internal confirmation
-        alerts = []
-
-        # Preload human-confirmed aliases to avoid spamming alerts
-        known_aliases = {
-            a.alias.lower()
-            for a in s.query(NameAlias).all()
-        }
-
-        # Build a lookup: last name → registered user
-        registered_people = {
-            (p.first_name.lower(), p.last_name.lower()): p
-            for p in s.query(Person).filter_by(registered=True)
-        }
-
-        for chunk in llm_results:
-            for person_info in chunk["analysis"]["persons"]: # list of {name, is_known_user, user_id, confidence}
-                if person_info["is_known_user"]: # if is_known_user = True
-                    continue  # skip exact matches
-                
-                detected = person_info["name"].strip()
-                detected_norm = detected.lower()
-
-                # If this token is already a validated alias, skip creating an alert
-                if detected_norm in known_aliases:
-                    continue
-
-                det_first, *rest = detected.split()
-                det_last = " ".join(rest) if rest else ""
-
-                # check if last name matches a registered user
-                for (first, last), reg_person in registered_people.items():
-                    if det_last.lower() == last.lower() or detected_norm == last.lower():
-                        alerts.append({
-                            "alias": detected,
-                            "candidate": f"{reg_person.first_name} {reg_person.last_name}",
-                            "person_id": reg_person.id
-                        })
-
-        # If alerts exist → save for internal UI
-        if alerts:
-            save_merge_alerts_for_ui(path_abs, alerts)
-            print(f"[LLM create merge alert] Merge alerts created for {path_abs}: {alerts}")
-
-        s.commit()
-        print(f"[LLM] Updated file_people for {len(file_obj.people)} persons")
 
 def run_llm_analysis_and_update_db(path_abs: str):
     """
@@ -293,13 +159,12 @@ def sync_users_from_external():
                 first = u["first_name"]
                 last = u["last_name"]
 
-                # Try to find an existing person — either by uid or by same name
+                # Try to find an existing person: either by uid or by same name
                 existing = session.query(Person).filter(
                     (Person.uid == uid) |
                     ((Person.first_name == first) & (Person.last_name == last))
                 ).first()
 
-                # existing = session.query(Person).filter_by(uid=uid).first()
                 if existing:
                     existing.uid = uid
                     existing.registered = True
@@ -309,9 +174,6 @@ def sync_users_from_external():
                     session.add(new_p)
                     print(f"[DB] Added new registered user: {first} {last} ({uid})")
 
-                # if not existing:
-                #     new_p = Person(uid=uid, first_name=first, last_name=last)
-                #     session.add(new_p)
             session.commit()
         print("[INIT] User sync complete.")
     except Exception as e:
@@ -446,10 +308,6 @@ def events_for_read(path):
 
     print(f"[GDPR] Emitting {len(events)} Use events for {fid}: {[e.args for e in events]}")
     return events
-    # # If no users, default to anonymous
-    # if not uids:
-    #     uids = ["anonymous"]
-    # return [Event('Use', fid, 'marketing', uid) for uid in uids]
 
 # ========== SCHEMA ==========
 schema = Schema()
@@ -507,14 +365,6 @@ instrumentation_mapping = InstrumentationMapping({
     # 'Use': lambda x:x
 })
 
-# todo: or
-# instrumentation_mapping = InstrumentationMapping({
-#     'Use': read_mapping,
-#     'Collect': write_mapping,
-#     'Erase': unlink_mapping
-# })
-# ?
-
 # ========== PEP ==========
 
 pep = PEP(
@@ -552,9 +402,6 @@ def start_ingest_server(logger):
                 payload = json.loads(self.rfile.read(length) or b"{}")
                 # --- Branch 1: handle Consent/Revoke events ---
 
-            # if self.path != "/ingest":
-                # self.send_error(404); return
-            # try:
                 if self.path == "/ingest":
                     # length = int(self.headers.get("Content-Length", "0"))
                     # payload = json.loads(self.rfile.read(length) or b"{}")
@@ -713,7 +560,6 @@ class MyFS(Fuse):
 
 
     def getattr(self, path): #v
-        # print("in getattr")
         """
         Return the attributes of a file or directory.
         (e.g. size, permissions, owner, timestamps)
@@ -752,14 +598,6 @@ class MyFS(Fuse):
         return st
 
     def readdir(self, path, offset): #v
-        print("in readdir")
-        """
-        (awscli-venv) ann20010929@ann20010929-ThinkPad-P16s-Gen-3:~/MA3/Building_a_GDPR-compliant_file_system/instrlib$ ls -la /tmp/mnt
-        total 25
-        drwxr-xr-x  2 root root     0 Jan  1  1970 .
-        drwxrwxrwt 25 root root 20480 Oct 14 16:55 ..
-        -rw-r--r--  1 root root    13 Jan  1  1970 hello.txt
-        """
         print(f"[DEBUG readdir] called with path={path}", flush=True)
         from fuse import Direntry
         p = _upper(path)
@@ -782,7 +620,12 @@ class MyFS(Fuse):
         raise OSError(ENOENT, "No such file or directory")
 
     def open(self, path, flags):
+        #todo 10h11: testing
         print("in open")
+        # if self._is_temp_name(path):
+        #     print("TEMP FILE IGNORED:", path)
+        #     return 0
+
         # allow access if the path exists in /upper
         # print(f"[DEBUG open] called with path={path}, flags={flags}", flush=True)
         p = _upper(path)

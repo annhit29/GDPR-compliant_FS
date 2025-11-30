@@ -35,6 +35,7 @@ def merge_person_into(s, dup_person, registered_person):
 
     # Delete duplicate
     s.delete(dup_person)
+    print("DELETION temporary user DONE:", dup_person.first_name, dup_person.last_name)
 
 # --- Load reasons.yaml ---
 REASONS_PATH = os.path.join(os.path.dirname(__file__), "purposes_and_reasons.yaml")
@@ -83,6 +84,7 @@ def resolve_merge():
         with Session() as s:
             registered_person = s.query(Person).get(person_id)
 
+
             # 1. Store alias → canonical person_id mapping (see NameAlias model and name_aliases table)
             existing = s.query(NameAlias).filter_by(alias=alias).first()
             if not existing:
@@ -93,19 +95,22 @@ def resolve_merge():
             # else: do nothing → alias already stored
 
             # 2. Find duplicates to merge
+            alias_tokens = alias.split()
+            if len(alias_tokens) == 2:
+                alias_first, alias_last = alias_tokens
+            else:
+                alias_first = alias
+                alias_last = ""
+
             dup = (
                 s.query(Person)
                 .filter(Person.id != registered_person.id)
-                .filter(
-                    (func.lower(Person.first_name) == alias.lower()) |
-                    (func.lower(Person.last_name) == alias.lower())
-                )
+                .filter(func.lower(Person.first_name) == alias_first.lower())
+                .filter(func.lower(Person.last_name) == alias_last.lower())
                 .first()
             )
 
-
-
-            if dup and dup.id != registered_person.id:
+            if dup:
                 merge_person_into(s, dup, registered_person)
                 s.commit()
             #else: no duplicate found → nothing to merge
