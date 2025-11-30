@@ -10,7 +10,10 @@ def _is_typo(a, b):
     if a == b:
         return True
     if len(a) > 1 and len(b) > 1: # avoid too short strings
-        return distance(a, b) <= 3
+        dist = distance(a, b)
+        print(f'{dist=}')
+        print(f'{dist <= 3=}')
+        return dist <= 3
     return False
 
 def update_file_people_from_llm(path_abs: str, llm_results: list):
@@ -108,35 +111,75 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                 if detected_norm in known_aliases:
                     continue
 
-                det_first, *rest = detected.split() # detect first and last names
-                det_last = " ".join(rest) if rest else ""
+                # det_first, *rest = detected.split() # detect first and last names
+                # det_last = " ".join(rest) if rest else ""
+                tokens = detected_norm.split()
+
+                # # When the detected name has only 1 token, treat it as last name, not first name
+                # # This matches human intuition:
+                # # A single surname like "Hsieh" or "Hsieeh" → likely a last name
+                # # A single given name like "John" or "Johnn" → likely a first name
+                # # Since you cannot know, you must pick one convention, and last-name is the correct one
+                # # (because LLM is better at detecting surnames from partial input).
+                # if len(tokens) == 1:
+                #     # SINGLE TOKEN → assume it's a LAST NAME
+                #     first = ""
+                #     last = tokens[0]
+                # else:
+                #     first = tokens[0]
+                #     last = " ".join(tokens[1:])
 
                 # check if last name matches a registered user
                 for (first, last), reg_person in registered_people.items(): # iterate over registered users with the first and last names gotten
-                    # check for last name match
-                    if det_last.lower() == last.lower() or detected_norm == last.lower():
-                        alerts.append({
-                            "alias": detected,
-                            "candidate": f"{reg_person.first_name} {reg_person.last_name}",
-                            "person_id": reg_person.id
-                        })
-                    # check for first name match
-                    if det_first.lower() == first.lower() or detected_norm == first.lower():
-                        alerts.append({
-                            "alias": detected,
-                            "candidate": f"{reg_person.first_name} {reg_person.last_name}",
-                            "person_id": reg_person.id
-                        })
-                    # if distance +-3 then a typo
-                    if _is_typo(det_first.lower(), first.lower()):
-                        alerts.append({
-                            "alias": detected,
-                            "candidate": f"{reg_person.first_name} {reg_person.last_name}",
-                            "person_id": reg_person.id
-                        })
+                    # -----------------------------
+                    # Case A: multi-token name
+                    # Example: "J Doe", "John Doee"
+                    # -----------------------------
+                    if len(tokens) >= 2:
+                        det_first = tokens[0].lower()
+                        det_last  = tokens[-1].lower()
+
+                        # First name exact or typo
+                        if det_first == first or _is_typo(det_first, first):
+                            alerts.append({
+                                "alias": detected,
+                                "candidate": f"{reg_person.first_name} {reg_person.last_name}",
+                                "person_id": reg_person.id
+                            })
+
+                        # Last name exact or typo
+                        if det_last == last or _is_typo(det_last, last):
+                            alerts.append({
+                                "alias": detected,
+                                "candidate": f"{reg_person.first_name} {reg_person.last_name}",
+                                "person_id": reg_person.id
+                            })
 
 
-        # If alerts exist → save for internal UI
+                    # -----------------------------
+                    # Case B: single-token name
+                    # Example: "Hsieeh", "Johnn", "Doee"
+                    # -----------------------------
+                    else:
+                        word = tokens[0]
+
+                        # Compare to first name
+                        if _is_typo(word, first):
+                            alerts.append({
+                                "alias": detected,
+                                "candidate": f"{reg_person.first_name} {reg_person.last_name}",
+                                "person_id": reg_person.id
+                            })
+
+                        # Compare to last name
+                        if _is_typo(word, last):
+                            alerts.append({
+                                "alias": detected,
+                                "candidate": f"{reg_person.first_name} {reg_person.last_name}",
+                                "person_id": reg_person.id
+                            })
+
+        # If alerts exist → save for internal UI (with merge_alerts.json)
         if alerts:
             save_merge_alerts_for_ui(path_abs, alerts)
             print(f"[LLM create merge alert] Merge alerts created for {path_abs}: {alerts}")
