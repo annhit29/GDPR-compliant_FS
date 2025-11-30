@@ -2,23 +2,88 @@ from pathlib import Path
 from gdprfs.models import Person, File, Session
 from datetime import datetime
 import os
+import subprocess
 
 def _is_temp_name(fuse_path: str) -> bool:
-    print("in _is_temp_name")
+    # print("in _is_temp_name")
     """Detect temporary filenames created by editors (e.g., gedit)."""
     name = os.path.basename(fuse_path)
     return (
         name.startswith(".goutputstream-")
-        or name.endswith("~")
+        or name.endswith("~") # editor temp
         or name.startswith(".#")
         or name.endswith(".swp")
+
+        #todo 10h11: testing
+        or name.startswith("~$") # MS Office temporary file
+        or name.startswith(".~lock") # LibreOffice lock file
+        or name.endswith(".tmp") # generic temp             
+        or name.endswith(".csv#") # LibreOffice temp variant
     )
 
-def _read_text_safe(p: Path) -> str | None:
+#todo 10h11: testing: put inside myfs.py
+def _extract_pdf_text(abs_path: str) -> str:
+    """Extract text from a PDF using pdftotext."""
     try:
-        return p.read_text(encoding="utf-8", errors="ignore")
-    except Exception:
-        return None  # for binary file or unreadable, return None, not ""
+        out = subprocess.run(
+            ["pdftotext", "-layout", abs_path, "-"],
+            capture_output=True,
+            text=True
+        )
+        return out.stdout
+    except Exception as e:
+        print("[PDF ERROR]", e)
+        return ""
+
+def _get_text_for_matching(p: Path) -> str | None:
+    """
+    Return plaintext for name matching, from any supported format.
+    Never modifies the underlying file; only uses extractors.
+    """
+    ext = p.suffix.lower()
+
+    print(f"[DB][EXTRACT] Processing file: {p} (ext={ext})")
+
+    # Try reading as plain text ONLY for obvious text formats
+    if ext in [".txt", ".csv", ".json", ".md", ".log"]:
+        print("[DB][EXTRACT] Trying UTF-8 plain text read")
+        try:
+            txt = p.read_text(encoding="utf-8")
+
+            print("[DB][EXTRACT] UTF-8 plain text read SUCCESS")
+            print("[DB][EXTRACT] Preview (first 200 chars):")
+            print(txt[:200])
+            return txt # is the txt or csv or other listed above format
+        except UnicodeDecodeError:
+            print("[DB][EXTRACT] UTF-8 plain text read FAILED, falling back")
+            pass
+
+    # Fall back to rich extractors for binary formats
+    if ext == ".pdf":
+        print("[DB][EXTRACT] Using PDF extractor")
+        text = _extract_pdf_text(str(p))
+        print("[DB][EXTRACT] PDF extractor output preview (first 200 chars):")
+        print(text[:200])
+        return text
+    
+        # return _extract_pdf_text(str(p))
+    # if ext == ".docx":
+    #     return extract_docx_text(str(p))
+    # if ext == ".odt":
+    #     return extract_odt_text(str(p))
+    # if ext in [".xls", ".xlsx"]:
+    #     return extract_excel_text(str(p))
+
+    # Unsupported binary format
+    print("[DB][EXTRACT] Unsupported file type → returning None")
+    return None
+
+
+# def _read_text_safe(p: Path) -> str | None:
+#     try:
+#         return p.read_text(encoding="utf-8", errors="ignore")
+#     except Exception:
+#         return None  # for binary file or unreadable, return None, not ""
 
 def rescan_all_upper_files():
     """Rescan all files in /upper to (re)create missing mappings."""
@@ -32,7 +97,6 @@ def rescan_all_upper_files():
 
 def update_file_metadata(file_path: str, last_action: str):
     """Update timestamps and last action for a file."""
-    from gdprfs.models import File
     p = Path(file_path)
 
     if not p.exists():
@@ -72,26 +136,6 @@ def mark_file_deleted(file_path: str):
             session.commit()
             print(f"[DB] Deleted DB record for {file_id}")
 
-# def mark_file_deleted(file_path: str):
-#     """
-#     For auditability: GDPR-style “soft delete”
-#     Mark a file as deleted in the database.
-#     """
-#     from gdprfs.models import File
-#     p = Path(file_path)
-#     file_id = p.name
-#     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-#     with Session() as session:
-#         f = session.query(File).filter_by(file_id=file_id).first()
-#         if f:
-#             f.deleted = 1 # mark as deleted with the deleted flag
-#             f.last_action = "delete"
-#             f.modified_at = now
-#             f.accessed_at = now
-#             session.commit()
-#             print(f"[DB] Marked {file_id} as deleted at {now}")
-
 def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", old_name: str = None):
     """
     1. Reads the file contents (in /upper),
@@ -108,7 +152,7 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
     if not p.exists() or not p.is_file():
         return
 
-    content = _read_text_safe(p)
+    content = _get_text_for_matching(p) #_read_text_safe(p)
     if content is None: # binary or unreadable file; but allow empty text files to still be registered in DB
         return
     
@@ -149,8 +193,6 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
             f.accessed_at = accessed
             f.last_action = context
         
-        # session.flush()
-
         if content.strip():
             # 2) Loop over known users (Person):
             people = session.query(Person).all()

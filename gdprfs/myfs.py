@@ -236,7 +236,7 @@ def _get_file_and_user(path: str):
             if person and person.uid: # if person exists and has a uid
                 uids.append(person.uid)
 
-        print(f"[DEBUG] Returning from _get_file_and_user: fid={file_obj.file_id}, uids={uids}")
+        # print(f"[DEBUG] Returning from _get_file_and_user: fid={file_obj.file_id}, uids={uids}")
         return file_obj.file_id, uids
 
 
@@ -282,9 +282,8 @@ def events_for_read(path):
     events = []
     with Session() as session:
         file_obj = session.query(File).filter(File.abs_path == str(_upper(path).resolve())).first()
-        print(f'{file_obj=}')
-        # if not file_obj:
-        #     return [Event("Use", fid, "marketing", "anonymous")]
+        # print(f'{file_obj=}')
+        # print(f'{file_obj.people=}')
 
         # Case 1: No personal data linked → free access, but still log as "nonpersonal"
         if not file_obj or not file_obj.people:
@@ -657,11 +656,10 @@ class MyFS(Fuse):
 
         # return only the requested slice, as bytes
         with open(p, "rb") as f: # the file is being read from p i.e. from /upper 
-            print("opened file for reading")
             f.seek(offset)
-            print(f"size: {size}")
+            # print(f"size: {size}")
             data = f.read(size)
-        print(f"[READ] path={path} reading from {p}, {len(data)} bytes, size={size}, offset={offset}, returning={data}")
+        # print(f"[READ] path={path} reading from {p}, {len(data)} bytes, size={size}, offset={offset}, returning={data}")
         
         update_file_mapping_for_upper(str(p.resolve()), context="read") 
         update_file_metadata(str(p.resolve()), "read")
