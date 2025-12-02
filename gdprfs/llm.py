@@ -1,3 +1,8 @@
+from hashlib import sha256
+import json
+import os
+from pathlib import Path
+import requests
 from gdprfs.db_utils import Session
 from gdprfs.models import File, Person, NameAlias
 from sqlalchemy import and_, func
@@ -186,3 +191,61 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
 
         s.commit()
         print(f"[LLM] Updated file_people for {len(file_obj.people)} persons")
+
+def run_llm_analysis_and_update_db(path_abs: str):
+    """
+    Call the LLM analyzer for the given absolute file path,
+    then update the gdprfs DB File.people accordingly.
+    """
+    print(f"[LLM] Running LLM analyzer on file: {path_abs}")
+
+    # Skip temporary editor files
+    if os.path.basename(path_abs).startswith(".goutputstream-"):
+        print(f"[LLM] Skipping temp file for analysis: {path_abs}")
+        return
+
+
+    data = Path(path_abs).read_bytes()
+    new_hash = sha256(data).hexdigest()
+    
+    # 1. Load known users from local DB
+    with Session() as s:
+        file_obj = s.query(File).filter_by(abs_path=path_abs).first()
+
+        # If file exists and hash matches, skip expensive LLM
+        if file_obj and file_obj.sha256 == new_hash:
+            print(f"[LLM] SKIPPED — content unchanged (hash match).")
+            return
+
+        known_users = [
+            {"user_id": person.id,
+             "full_name": f"{person.first_name} {person.last_name}"}
+            for person in s.query(Person).filter_by(registered=True)
+        ]
+
+    # 2. Call LLM analyzer API
+    try:
+        resp = requests.post(
+            "http://127.0.0.1:5005/analyze-file",
+            json={"path": path_abs, "known_users": known_users}
+        )
+        results = resp.json()
+        
+        print("[LLM] Raw analyzer result:")
+        print(json.dumps(results, indent=2))
+
+    except Exception as e:
+        print(f"[LLM] ERROR: analyzer failed: {e}")
+        return
+
+    # 3. Update DB mapping (critical!)
+    update_file_people_from_llm(path_abs, results)
+
+    # 4. Store new hash in DB
+    with Session() as s:
+        file_obj = s.query(File).filter_by(abs_path=path_abs).first()
+        if file_obj:
+            file_obj.sha256 = new_hash
+            s.commit()
+            print(f"[LLM] Updated content hash for {path_abs}")
+

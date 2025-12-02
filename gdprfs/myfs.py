@@ -1,11 +1,11 @@
 from errno import EACCES
 import getpass
-from hashlib import sha256
 import threading
 from fuse import Fuse
 import fuse
 fuse.fuse_python_api = (0, 2) 
 
+from gdprfs.llm import run_llm_analysis_and_update_db
 from gdprfs.settings import INSTRLIB_EXE, INSTRLIB_FORMULA, INSTRLIB_LOG, INSTRLIB_SIG
 from instrlib.instrument import Instrument
 from instrlib.logger import Logger
@@ -15,12 +15,10 @@ from instrlib.pep import PEP, InstrumentationMapping
 from instrlib.event import Event, Functional
 import os, shutil
 from pathlib import Path
-from gdprfs.db_utils import Session, update_file_mapping_for_upper, update_file_metadata, mark_file_deleted, _is_temp_name
+from gdprfs.db_utils import Session, sync_users_from_external, update_file_mapping_for_upper, update_file_metadata, mark_file_deleted, _is_temp_name
 from gdprfs.models import File, Person
 import yaml
-import requests
 import json
-from gdprfs.llm import update_file_people_from_llm
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
 UPPER_DIR  = Path("/var/lib/gdprfs/upper")
@@ -82,103 +80,6 @@ def _delete_from_mirror(fuse_path: str):
     dst = _mirror(fuse_path)
     if dst.exists():
         dst.unlink()
-
-def run_llm_analysis_and_update_db(path_abs: str):
-    """
-    Call the LLM analyzer for the given absolute file path,
-    then update the gdprfs DB File.people accordingly.
-    """
-    print(f"[LLM] Running LLM analyzer on file: {path_abs}")
-
-    # Skip temporary editor files
-    if os.path.basename(path_abs).startswith(".goutputstream-"):
-        print(f"[LLM] Skipping temp file for analysis: {path_abs}")
-        return
-
-
-    data = Path(path_abs).read_bytes()
-    new_hash = sha256(data).hexdigest()
-    
-    # 1. Load known users from local DB
-    with Session() as s:
-        file_obj = s.query(File).filter_by(abs_path=path_abs).first()
-
-        # If file exists and hash matches, skip expensive LLM
-        if file_obj and file_obj.sha256 == new_hash:
-            print(f"[LLM] SKIPPED — content unchanged (hash match).")
-            return
-
-        print(f"[LLM] Running LLM analyzer on file: {path_abs}")
-
-        known_users = [
-            {"user_id": person.id,
-             "full_name": f"{person.first_name} {person.last_name}"}
-            for person in s.query(Person).filter_by(registered=True)
-        ]
-
-    # 2. Call LLM analyzer API
-    try:
-        resp = requests.post(
-            "http://127.0.0.1:5005/analyze-file",
-            json={"path": path_abs, "known_users": known_users}
-        )
-        results = resp.json()
-        
-        print("[LLM] Raw analyzer result:")
-        print(json.dumps(results, indent=2))
-
-    except Exception as e:
-        print(f"[LLM] ERROR: analyzer failed: {e}")
-        return
-
-    # 3. Update DB mapping (critical!)
-    update_file_people_from_llm(path_abs, results)
-
-    # 4. Store new hash in DB
-    with Session() as s:
-        file_obj = s.query(File).filter_by(abs_path=path_abs).first()
-        if file_obj:
-            file_obj.sha256 = new_hash
-            s.commit()
-            print(f"[LLM] Updated content hash for {path_abs}")
-
-def sync_users_from_external():
-    """
-    Synchronize users from the external consent platform to the local GDPRFS database.
-    """
-    import requests
-    BASE_URL = "http://127.0.0.1:5000"
-    try:
-        res = requests.get(f"{BASE_URL}/api/users")
-        users = res.json()
-        print(f"[INIT] Syncing {len(users)} users to local DB...")
-
-        with Session() as session:
-            for u in users:
-                uid = u["uid"]
-                first = u["first_name"]
-                last = u["last_name"]
-
-                # Try to find an existing person: either by uid or by same name
-                existing = session.query(Person).filter(
-                    (Person.uid == uid) |
-                    ((Person.first_name == first) & (Person.last_name == last))
-                ).first()
-
-                if existing:
-                    existing.uid = uid
-                    existing.registered = True
-                    print(f"[DB] Upgraded existing person → uid={uid}, name={first} {last}")
-                else:
-                    new_p = Person(uid=uid, first_name=first, last_name=last, registered=True)
-                    session.add(new_p)
-                    print(f"[DB] Added new registered user: {first} {last} ({uid})")
-
-            session.commit()
-        print("[INIT] User sync complete.")
-    except Exception as e:
-        print(f"[INIT] Failed to sync users: {e}")
-
 
 def replay_from_consent_db(logger):
     """

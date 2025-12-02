@@ -255,3 +255,41 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
 
         session.commit()
         print(f"[DB] Updated mapping for {file_id} (context={context})")
+
+
+def sync_users_from_external():
+    """
+    Synchronize users from the external consent platform to the local GDPRFS database.
+    """
+    import requests
+    BASE_URL = "http://127.0.0.1:5000"
+    try:
+        res = requests.get(f"{BASE_URL}/api/users")
+        users = res.json()
+        print(f"[INIT] Syncing {len(users)} users to local DB...")
+
+        with Session() as session:
+            for u in users:
+                uid = u["uid"]
+                first = u["first_name"]
+                last = u["last_name"]
+
+                # Try to find an existing person: either by uid or by same name
+                existing = session.query(Person).filter(
+                    (Person.uid == uid) |
+                    ((Person.first_name == first) & (Person.last_name == last))
+                ).first()
+
+                if existing:
+                    existing.uid = uid
+                    existing.registered = True
+                    print(f"[DB] Upgraded existing person → uid={uid}, name={first} {last}")
+                else:
+                    new_p = Person(uid=uid, first_name=first, last_name=last, registered=True)
+                    session.add(new_p)
+                    print(f"[DB] Added new registered user: {first} {last} ({uid})")
+
+            session.commit()
+        print("[INIT] User sync complete.")
+    except Exception as e:
+        print(f"[INIT] Failed to sync users: {e}")
