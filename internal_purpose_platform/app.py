@@ -29,8 +29,10 @@ def merge_person_into(s, dup_person, registered_person):
     # Move file mappings
     for f in dup_person.files:
         if registered_person not in f.people:
+            print("not in", f.file_id, "adding", registered_person.id)
             f.people.append(registered_person)
         if dup_person in f.people:
+            print("in", f.file_id, "removing", dup_person.id)
             f.people.remove(dup_person)
 
     # Delete duplicate
@@ -73,17 +75,18 @@ def merge_alerts():
 
 @app.post("/resolve_merge")
 def resolve_merge():
+    print("FORM SUBMITTED:", request.form)
+
     alias = request.form["alias"].strip().lower()
     person_id = int(request.form["person_id"])
     action = request.form["action"]
 
-    from gdprfs.db_utils import Session
-    from gdprfs.models import NameAlias
+    from gdprfs.models import NameAlias, Session
 
     if action == "merge":
+        print(f"Resolving merge for alias '{alias}' into person_id {person_id}")
         with Session() as s:
             registered_person = s.query(Person).get(person_id)
-
 
             # 1. Store alias → canonical person_id mapping (see NameAlias model and alias_person_map table)
             existing = s.query(NameAlias).filter_by(alias=alias).first()
@@ -111,6 +114,7 @@ def resolve_merge():
             )
 
             if dup:
+                print(f"Merging duplicate person_id {dup.id} into registered person_id {registered_person.id}")
                 merge_person_into(s, dup, registered_person)
                 s.commit()
             #else: no duplicate found → nothing to merge
@@ -120,7 +124,7 @@ def resolve_merge():
     if data:
         new_alerts = [
             a for a in data["alerts"]
-            if a["alias"].lower() != alias 
+            if a["alias"].strip().lower() != alias
         ]
 
         if new_alerts:
