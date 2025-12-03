@@ -26,7 +26,10 @@ def _is_temp_name(fuse_path: str) -> bool:
     )
 
 def _extract_pdf_to_text(abs_path: str) -> str:
-    """Extract text from a PDF using pdftotext."""
+    """
+    Extract text from a PDF using pdftotext.
+    Method used by the LLM + DB mapping.
+    """
     try:
         out = subprocess.run(
             ["pdftotext", "-layout", abs_path, "-"],
@@ -82,17 +85,17 @@ def _get_text_for_matching(p: Path) -> str | None:
     """
     ext = p.suffix.lower()
 
-    print(f"[DB][EXTRACT] Processing file: {p} (ext={ext})")
+    # print(f"[DB][EXTRACT] Processing file: {p} (ext={ext})")
 
     # Try reading as plain text ONLY for obvious text formats
     if ext in [".txt", ".csv", ".json", ".md", ".log"]:
-        print("[DB][EXTRACT] Trying UTF-8 plain text read")
+        # print("[DB][EXTRACT] Trying UTF-8 plain text read")
         try:
             txt = p.read_text(encoding="utf-8")
 
-            print("[DB][EXTRACT] UTF-8 plain text read SUCCESS")
-            print("[DB][EXTRACT] Preview (first 200 chars):")
-            print(txt[:200])
+            # print("[DB][EXTRACT] UTF-8 plain text read SUCCESS")
+            # print("[DB][EXTRACT] Preview (first 200 chars):")
+            # print(txt[:200])
             return txt # is the txt or csv or other listed above format
         except UnicodeDecodeError:
             print("[DB][EXTRACT] UTF-8 plain text read FAILED, falling back")
@@ -100,12 +103,11 @@ def _get_text_for_matching(p: Path) -> str | None:
 
     # Fall back to rich extractors for binary formats
     if ext == ".pdf":
-        print("[DB][EXTRACT] Using PDF extractor")
+        # print("[DB][EXTRACT] Using PDF extractor")
         text = _extract_pdf_to_text(str(p))
         print("[DB][EXTRACT] PDF extractor output preview (first 200 chars):")
         print(text[:200])
         return text
-        # return _extract_pdf_text(str(p))
 
     # if ext == ".docx":
     #     return _extract_docx_to_text(str(p))
@@ -115,7 +117,7 @@ def _get_text_for_matching(p: Path) -> str | None:
     #     return _extract_excel_to_text(str(p))
 
     # Unsupported binary format
-    print("[DB][EXTRACT] Unsupported file type → returning None")
+    # print("[DB][EXTRACT] Unsupported file type → returning None")
     return None
 
 

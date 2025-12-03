@@ -72,8 +72,11 @@ python3 -c "import importlib.metadata; print('✅ Flask-SQLAlchemy version:', im
 echo "🔹 Installing Pydantic + Pydantic-AI..."
 pip install "pydantic>=2" pydantic-ai openai python-docx odfpy pandas openpyxl pdfminer.six
 
-echo " Installing Levenshtein for improved string matching..."
+echo "Installing Levenshtein for improved string matching..."
 pip install python-Levenshtein
+
+echo "🔹 Installing pypdf..."
+pip install pypdf
 
 python3 -c "import pydantic; print('✅ Pydantic version:', pydantic.__version__)"
 python3 -c "import pydantic_ai; print('✅ Pydantic-AI imported successfully')"

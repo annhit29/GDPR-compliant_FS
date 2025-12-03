@@ -25,3 +25,5 @@ gdprfs/myfs_for_internal.py
 .env
 *.env
 gdprfs/test_files/
+
+test.csv
