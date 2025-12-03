@@ -3,8 +3,7 @@ import json
 import os
 from pathlib import Path
 import requests
-from gdprfs.db_utils import Session
-from gdprfs.models import File, Person, NameAlias
+from gdprfs.models import File, Person, NameAlias, Session
 from sqlalchemy import and_, func
 from gdprfs.merge_alerts import save_merge_alerts_for_ui
 from Levenshtein import distance  # if installed
@@ -89,9 +88,6 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                 if person not in file_obj.people:
                     file_obj.people.append(person)
 
-        # detect partial matches that require internal confirmation
-        alerts = []
-
         # Preload human-confirmed aliases to avoid spamming alerts
         known_aliases = {
             a.alias.lower()
@@ -101,9 +97,12 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
         # Build a lookup: last name → registered user
         registered_people = {
             (p.first_name.lower(), p.last_name.lower()): p
-            for p in s.query(Person).filter_by(registered=True)
+            for p in s.query(Person).filter_by(registered=True) #todo: or not? coz eg: "Hsieeh" won't create merge alert when whsieh hasn't registered yet
         }
-
+        
+        # 4. Create merge alerts for partial matches or potential typos
+        # detect partial matches that require internal confirmation
+        alerts = []
         for chunk in llm_results:
             for person_info in chunk["analysis"]["persons"]: # list of {name, is_known_user, user_id, confidence}
                 if person_info["is_known_user"]: # if is_known_user = True
@@ -116,23 +115,15 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                 if detected_norm in known_aliases:
                     continue
 
-                # det_first, *rest = detected.split() # detect first and last names
-                # det_last = " ".join(rest) if rest else ""
                 tokens = detected_norm.split()
 
+                # todo: do this?
                 # # When the detected name has only 1 token, treat it as last name, not first name
                 # # This matches human intuition:
                 # # A single surname like "Hsieh" or "Hsieeh" → likely a last name
                 # # A single given name like "John" or "Johnn" → likely a first name
                 # # Since you cannot know, you must pick one convention, and last-name is the correct one
                 # # (because LLM is better at detecting surnames from partial input).
-                # if len(tokens) == 1:
-                #     # SINGLE TOKEN → assume it's a LAST NAME
-                #     first = ""
-                #     last = tokens[0]
-                # else:
-                #     first = tokens[0]
-                #     last = " ".join(tokens[1:])
 
                 # check if last name matches a registered user
                 for (first, last), reg_person in registered_people.items(): # iterate over registered users with the first and last names gotten
@@ -144,40 +135,24 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                         det_first = tokens[0].lower()
                         det_last  = tokens[-1].lower()
 
-                        # First name exact or typo
-                        if det_first == first or _is_typo(det_first, first):
+                        if _is_typo(det_first, first) or _is_typo(det_last, last):
+                            print("Creating alert for multi-token name:", detected, "vs", reg_person.first_name, reg_person.last_name)
                             alerts.append({
                                 "alias": detected,
                                 "candidate": f"{reg_person.first_name} {reg_person.last_name}",
                                 "person_id": reg_person.id
                             })
-
-                        # Last name exact or typo
-                        if det_last == last or _is_typo(det_last, last):
-                            alerts.append({
-                                "alias": detected,
-                                "candidate": f"{reg_person.first_name} {reg_person.last_name}",
-                                "person_id": reg_person.id
-                            })
-
 
                     # -----------------------------
                     # Case B: single-token name
-                    # Example: "Hsieeh", "Johnn", "Doee"
+                    # Example: "Hsieeh", "Johnn", "Doee", "John", "Doe"
                     # -----------------------------
                     else:
                         word = tokens[0]
 
                         # Compare to first name
-                        if _is_typo(word, first):
-                            alerts.append({
-                                "alias": detected,
-                                "candidate": f"{reg_person.first_name} {reg_person.last_name}",
-                                "person_id": reg_person.id
-                            })
-
-                        # Compare to last name
-                        if _is_typo(word, last):
+                        if _is_typo(word, first) or _is_typo(word, last):
+                            print("Creating alert for single-token name:", detected, "vs", reg_person.first_name, reg_person.last_name)
                             alerts.append({
                                 "alias": detected,
                                 "candidate": f"{reg_person.first_name} {reg_person.last_name}",
@@ -203,7 +178,6 @@ def run_llm_analysis_and_update_db(path_abs: str):
     if os.path.basename(path_abs).startswith(".goutputstream-"):
         print(f"[LLM] Skipping temp file for analysis: {path_abs}")
         return
-
 
     data = Path(path_abs).read_bytes()
     new_hash = sha256(data).hexdigest()
@@ -248,4 +222,3 @@ def run_llm_analysis_and_update_db(path_abs: str):
             file_obj.sha256 = new_hash
             s.commit()
             print(f"[LLM] Updated content hash for {path_abs}")
-
