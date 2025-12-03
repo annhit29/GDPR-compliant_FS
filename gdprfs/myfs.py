@@ -19,6 +19,15 @@ from gdprfs.db_utils import Session, sync_users_from_external, update_file_mappi
 from gdprfs.models import File, Person
 import yaml
 import json
+import subprocess # so the poller runs independently of the FUSE main loop, i.e. one daemon for FUSE, one daemon for poller
+from pypdf import PdfReader, PdfWriter
+from io import BytesIO
+
+PDF_CACHE = {}
+# todo: 0) d'autres formats de fichiers <- redacted qd lecture mm pour les txt (suppression handler)
+# 1) filename dit qqch aussi
+# 2) folder-level <- soit on lit le nom du dossier, soit on declare explicitement le PII (cf 3))
+# 3) declarer manuellement le PII (dans le internal interface, par l'utilisateur interne) <- inspiration: .gitignore
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
 UPPER_DIR  = Path("/var/lib/gdprfs/upper")
@@ -124,6 +133,45 @@ def replay_from_consent_db(logger):
     except Exception as e:
         print(f"[INIT] Failed to replay consents from consent DB: {e}")
 
+def _uids_from_page_text(text: str):
+    """
+    Given the text of a single PDF page, return the list of uids
+    whose names appear on that page. Falls back to pseudo-uid if needed.
+    """
+    text_lc = (text or "").lower()
+    if not text_lc.strip():
+        return []
+
+    uids = []
+    with Session() as session:
+        people = session.query(Person).all()
+        for person in people:
+            first = (person.first_name or "").strip().lower()
+            last  = (person.last_name  or "").strip().lower()
+            full  = f"{first} {last}".strip()
+
+            if not first and not last:
+                continue
+
+            if full and full in text_lc:
+                pass_match = True
+            elif first and first in text_lc:
+                pass_match = True
+            elif last and last in text_lc:
+                pass_match = True
+            else:
+                pass_match = False
+
+            if pass_match:
+                if person.uid:
+                    uids.append(person.uid)
+                else:
+                    # same fallback you already use
+                    pseudo = (first[:1] + last) if (first or last) else "anonymous"
+                    uids.append(pseudo)
+
+    return uids
+
 def _get_file_and_user(path: str):
     """Return (file_id, list of uids) for the file at path, if any."""
     with Session() as session:
@@ -134,8 +182,16 @@ def _get_file_and_user(path: str):
         uids = []
         for person in file_obj.people:
             # print(f"[DEBUG] Linked Person: uid={person.uid}, first={person.first_name}, last={person.last_name}")
-            if person and person.uid: # if person exists and has a uid
+            # if person and person.uid: # if person exists and has a uid
+            #     uids.append(person.uid)
+            if person.uid:
                 uids.append(person.uid)
+            else:
+                # fallback ID for page-based enforcement
+                first = (person.first_name or "").lower().replace(" ", "")
+                last  = (person.last_name or "").lower().replace(" ", "")
+                uid = first[:1] + last if first or last else "anonymous"
+                uids.append(uid)
 
         # print(f"[DEBUG] Returning from _get_file_and_user: fid={file_obj.file_id}, uids={uids}")
         return file_obj.file_id, uids
@@ -266,12 +322,18 @@ instrumentation_mapping = InstrumentationMapping({
 })
 
 # ========== PEP ==========
+def events_for_read_or_skip(path):
+    # If normal files => keep old behavior
+    if not str(path).lower().endswith(".pdf"):
+        return events_for_read(path)
+    # If PDF => skip full-file Use events
+    return []
 
 pep = PEP(
     mapping={
-        ('MyFS', 'read'): Functional('Use', lambda path, *a, **kw: events_for_read(path)),
+        ('MyFS', 'read'): Functional('Use', lambda path, *a, **kw: events_for_read_or_skip(path)),
         ('MyFS', 'write'): Functional('Collect', lambda path, *a, **kw: events_for_path(path, 'Collect')),
-        # ('MyFS', 'unlink'): Functional('Erase', lambda path, *a, **kw: events_for_path(path, 'Erase')),
+        # ('MyFS', 'unlink'): Functional('Delete', lambda path, *a, **kw: events_for_path(path, 'Delete')),
     },
     suppression_handlers=suppression_handlers,
     causation_handlers=causation_handlers#,
@@ -459,6 +521,57 @@ class MyFS(Fuse):
             print(f"[GDPR] Warning: failed to emit Collect event for {path}: {e}")
 
 
+    def _get_or_build_redacted_pdf(self, path):
+        """Build (once) and cache a redacted version of the PDF with suppressed pages blanked."""
+        abspath = _upper(path)
+
+        cache = PDF_CACHE.get(abspath)
+        if cache and "redacted_bytes" in cache:
+            return cache["redacted_bytes"]
+
+        # 1) Load original PDF
+        reader = PdfReader(str(abspath))
+
+        # 2) Figure out base fid + uids for this file
+        # fid_base, uids = _get_file_and_user(abspath)
+        fid_base, _ = _get_file_and_user(abspath)
+        if not fid_base:
+            fid_base = os.path.basename(abspath)
+        # if not uids:
+        #     uids = ["anonymous"]
+
+        writer = PdfWriter()
+
+        # 3) For each page: ask enforcer, then add original or blank page
+        for idx, page in enumerate(reader.pages):
+            page_fid = f"{fid_base}/page-{idx}"
+            page_text = page.extract_text() or ""
+            uids = _uids_from_page_text(page_text)
+
+
+            if not uids:
+                # page has no personal data → no Use event, no suppression
+                writer.add_page(page)
+                continue
+
+            events = [Event("Use", page_fid, uid) for uid in uids]
+
+            cau, sup, _, _ = logger.log(events, threading.Event(), False)
+
+            if sup:
+                print(f"[GDPR] Page {idx} suppressed → inserting blank page")
+                writer.add_blank_page(width=595, height=842)
+            else:
+                writer.add_page(page)
+
+        # 4) Serialize redacted PDF once
+        buf = BytesIO()
+        writer.write(buf)
+        data = buf.getvalue()
+
+        PDF_CACHE[abspath] = {"redacted_bytes": data}
+        return data
+
     def getattr(self, path): #v
         """
         Return the attributes of a file or directory.
@@ -488,12 +601,22 @@ class MyFS(Fuse):
         st = Stat()
         st.st_mode  = s.st_mode      # file type + permissions
         st.st_nlink = s.st_nlink     # number of hard links
-        st.st_size  = s.st_size      # file size in bytes
+        st.st_size = s.st_size      # file size in bytes
         st.st_uid   = s.st_uid       # owner user id (still needed for Linux)
         st.st_gid   = s.st_gid       # group id
         st.st_atime = int(s.st_atime)  # access time
         st.st_mtime = int(s.st_mtime)  # modification time
         st.st_ctime = int(s.st_ctime)  # change/creation time
+
+        # # --- FIX FOR PDF REDACTION ---
+        # if str(real_path).lower().endswith(".pdf"):
+        #     # Ensure redacted PDF is generated
+        #     data = self._get_or_build_redacted_pdf(path)
+        #     st.st_size = len(data)
+        #     return st
+
+        # # Non-PDF: return real size
+        # st.st_size = s.st_size
 
         return st
 
@@ -526,6 +649,9 @@ class MyFS(Fuse):
         # print(f"[DEBUG open] called with path={path}, flags={flags}", flush=True)
         p = _upper(path)
         if p.exists():
+            # PDF cache invalidation
+            if str(p).lower().endswith(".pdf"):
+                PDF_CACHE.pop(p, None)
             update_file_mapping_for_upper(str(p.resolve()), context="open")
             update_file_metadata(str(p.resolve()), "open")
             return 0
@@ -543,16 +669,30 @@ class MyFS(Fuse):
         if not p.is_file():
             from errno import ENOENT
             raise OSError(ENOENT, "No such file or directory")
+        
+        # =========== CASE1: pdf with page-based Use event ===========
+        if str(p).lower().endswith(".pdf"):
+            print("[PDF] Page-based enforcement for PDF read")
 
+            redacted_bytes = self._get_or_build_redacted_pdf(path)
+
+            # still update DB mapping + metadata for access stats
+            update_file_mapping_for_upper(str(p.resolve()), context="read")
+            update_file_metadata(str(p.resolve()), "read")
+
+            return redacted_bytes[offset:offset + size]
+
+        # =========== CASE2: non-pdf files ===========        
         # return only the requested slice, as bytes
         with open(p, "rb") as f: # the file is being read from p i.e. from /upper 
             f.seek(offset)
             # print(f"size: {size}")
             data = f.read(size)
-        # print(f"[READ] path={path} reading from {p}, {len(data)} bytes, size={size}, offset={offset}, returning={data}")
+
+        print(f"[READ] path={path} reading from {p}, {len(data)} bytes, size={size}, offset={offset}, returning={data}")
         
         update_file_mapping_for_upper(str(p.resolve()), context="read") 
-        update_file_metadata(str(p.resolve()), "read")
+        update_file_metadata(str(p.resolve()), "read") # update timestamps + last_action
 
         return data
 
@@ -717,7 +857,6 @@ if __name__ == "__main__":
     import gc
     gc.collect() # clean up the memory (eg: files already deleted for a very long time) before mounting
     
-    import subprocess # so the poller runs independently of the FUSE main loop, i.e. one daemon for FUSE, one daemon for poller
     def start_consent_poller():
         try:
             subprocess.Popen(

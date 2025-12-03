@@ -72,7 +72,6 @@ def merge_alerts():
         merge_alerts=alerts
     )
 
-
 @app.post("/resolve_merge")
 def resolve_merge():
     print("FORM SUBMITTED:", request.form)
@@ -261,10 +260,6 @@ def stop_session():
     # else: Mark inactive
     current.active = False
     db.session.commit()
-
-    # if current:
-    #     current.active = False
-    #     db.session.commit()
     
     # Notify FUSE
     payload = {"kind": "StopSession", "uid": uid}
@@ -278,4 +273,5 @@ def stop_session():
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
-    app.run("127.0.0.1", 8000, debug=True)
+    # app.run("127.0.0.1", 8000, debug=True)
+    app.run("127.0.0.1", 8000, debug=True, use_reloader=False)
