@@ -636,17 +636,68 @@ class MyFS(Fuse):
         st.st_mtime = int(s.st_mtime)  # modification time
         st.st_ctime = int(s.st_ctime)  # change/creation time
 
-        # # --- FIX FOR PDF REDACTION ---
-        # if str(real_path).lower().endswith(".pdf"):
-        #     # Ensure redacted PDF is generated
-        #     data = self._get_or_build_redacted_pdf(path)
-        #     st.st_size = len(data)
-        #     return st
-
-        # # Non-PDF: return real size
-        # st.st_size = s.st_size
-
         return st
+
+    def mkdir(self, path, mode):
+        """Create a directory inside /upper and mirror."""
+        p = _upper(path)
+        print(f"[MKDIR] Creating directory {p}")
+
+        # Create in upper
+        _ensure_parent(p)
+        p.mkdir(exist_ok=True)
+
+        # Create in mirror
+        m = _mirror(path)
+        _ensure_parent(m)
+        m.mkdir(exist_ok=True)
+
+        # Update DB
+        try:
+            update_file_mapping_for_upper(str(p.resolve()), context="mkdir")
+            update_file_metadata(str(p.resolve()), "mkdir")
+        except Exception as e:
+            print(f"[DB] Warning: mkdir mapping failed for {p}: {e}")
+
+        return 0
+
+
+    def rmdir(self, path):
+        """Remove a directory from both layers."""
+        p = _upper(path)
+        print(f"[RMDIR] Removing directory {p}")
+
+        if not p.exists() or not p.is_dir():
+            from errno import ENOENT
+            raise OSError(ENOENT, "Directory does not exist")
+
+        # Remove in upper
+        os.rmdir(p)
+
+        # Remove in mirror
+        m = _mirror(path)
+        if m.exists():
+            os.rmdir(m)
+
+        # Update DB
+        try:
+            mark_file_deleted(str(p.resolve()))
+        except Exception as e:
+            print(f"[DB] Warning: rmdir deletion log failed for {p}: {e}")
+
+        return 0
+
+
+    def opendir(self, path):
+        """Allow opening a directory."""
+        p = _upper(path)
+        print(f"[OPENDIR] Opening directory {p}")
+
+        if not p.exists() or not p.is_dir():
+            from errno import ENOTDIR
+            raise OSError(ENOTDIR, "Not a directory")
+
+        return 0
 
     def readdir(self, path, offset): #v
         print(f"[DEBUG readdir] called with path={path}", flush=True)
