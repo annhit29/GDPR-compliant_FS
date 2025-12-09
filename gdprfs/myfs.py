@@ -24,6 +24,7 @@ from pypdf import PdfReader, PdfWriter
 from io import BytesIO
 
 PDF_CACHE = {}
+REDACTED_TEMPLATE = Path("/var/lib/gdprfs/redacted_template.pdf")
 # todo: 0) d'autres formats de fichiers <- redacted qd lecture mm pour les txt (suppression handler)
 # 1) filename dit qqch aussi
 # 2) folder-level <- soit on lit le nom du dossier, soit on declare explicitement le PII (cf 3))
@@ -520,6 +521,30 @@ class MyFS(Fuse):
         except Exception as e:
             print(f"[GDPR] Warning: failed to emit Collect event for {path}: {e}")
 
+    def _make_redacted_page(self):
+        """
+        Returns a single-page PDF that displays 'REDACTED'.
+        We simply load a pre-generated template PDF from disk and cache it.
+        """
+        if "redacted_page" in PDF_CACHE:
+            return PDF_CACHE["redacted_page"]
+
+        if REDACTED_TEMPLATE.exists():
+            with open(REDACTED_TEMPLATE, "rb") as f:
+                data = f.read()
+        else:
+            # Fallback: blank A4 page if the template is missing
+            writer = PdfWriter()
+            writer.add_blank_page(width=595, height=842)
+            buf = BytesIO()
+            writer.write(buf)
+            data = buf.getvalue()
+            print("[GDPR] WARNING: redacted_template.pdf missing → using blank page fallback")
+
+        PDF_CACHE["redacted_page"] = data
+        return data
+
+
 
     def _get_or_build_redacted_pdf(self, path):
         """Build (once) and cache a redacted version of the PDF with suppressed pages blanked."""
@@ -560,7 +585,10 @@ class MyFS(Fuse):
 
             if sup:
                 print(f"[GDPR] Page {idx} suppressed → inserting blank page")
-                writer.add_blank_page(width=595, height=842)
+                # writer.add_blank_page(width=595, height=842)
+                red_page = self._make_redacted_page()
+                red_reader = PdfReader(BytesIO(red_page))
+                writer.add_page(red_reader.pages[0])
             else:
                 writer.add_page(page)
 

@@ -77,6 +77,25 @@ pip install python-Levenshtein
 
 echo "🔹 Installing pypdf..."
 pip install pypdf
+echo "🔹 Generating redacted_template.pdf..."
+
+python3 <<'EOF'
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import A4
+
+c = canvas.Canvas("/tmp/redacted_template.pdf", pagesize=A4)
+c.setFont("Helvetica-Bold", 48)
+c.drawCentredString(A4[0] / 2, A4[1] / 2, "REDACTED")
+c.save()
+EOF
+
+# Move into place with correct permissions
+sudo mv /tmp/redacted_template.pdf /var/lib/gdprfs/redacted_template.pdf
+sudo chmod 644 /var/lib/gdprfs/redacted_template.pdf
+sudo chown root:root /var/lib/gdprfs/redacted_template.pdf
+
+echo "✅ redacted_template.pdf installed."
+
 
 python3 -c "import pydantic; print('✅ Pydantic version:', pydantic.__version__)"
 python3 -c "import pydantic_ai; print('✅ Pydantic-AI imported successfully')"
