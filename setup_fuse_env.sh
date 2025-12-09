@@ -72,6 +72,15 @@ python3 -c "import importlib.metadata; print('✅ Flask-SQLAlchemy version:', im
 echo "🔹 Installing Pydantic + Pydantic-AI..."
 pip install "pydantic>=2" pydantic-ai openai python-docx odfpy pandas openpyxl pdfminer.six
 
+python3 -c "import pydantic; print('✅ Pydantic version:', pydantic.__version__)"
+python3 -c "import pydantic_ai; print('✅ Pydantic-AI imported successfully')"
+python3 -c "import openai; print('✅ OpenAI package version:', openai.__version__)"
+python3 -c "import docx; print('✅ python-docx package version:', docx.__version__)"
+python3 -c "import odf; print('✅ odfpy imported successfully')"
+python3 -c "import pandas; print('✅ pandas package version:', pandas.__version__)"
+python3 -c "import openpyxl; print('✅ openpyxl package version:', openpyxl.__version__)"
+python3 -c "import pdfminer; print('✅ pdfminer.six package version:', pdfminer.__version__)"
+
 echo "Installing Levenshtein for improved string matching..."
 pip install python-Levenshtein
 
@@ -91,19 +100,18 @@ EOF
 
 # Move into place with correct permissions
 sudo mv /tmp/redacted_template.pdf /var/lib/gdprfs/redacted_template.pdf
-sudo chmod 644 /var/lib/gdprfs/redacted_template.pdf
+sudo chmod 644 /var/lib/gdprfs/redacted_template.pdf #permission: root: read/write, group: read, others: read
 sudo chown root:root /var/lib/gdprfs/redacted_template.pdf
 
 echo "✅ redacted_template.pdf installed."
 
 
-python3 -c "import pydantic; print('✅ Pydantic version:', pydantic.__version__)"
-python3 -c "import pydantic_ai; print('✅ Pydantic-AI imported successfully')"
-python3 -c "import openai; print('✅ OpenAI package version:', openai.__version__)"
-python3 -c "import docx; print('✅ python-docx package version:', docx.__version__)"
-python3 -c "import odf; print('✅ odfpy imported successfully')"
-python3 -c "import pandas; print('✅ pandas package version:', pandas.__version__)"
-python3 -c "import openpyxl; print('✅ openpyxl package version:', openpyxl.__version__)"
-python3 -c "import pdfminer; print('✅ pdfminer.six package version:', pdfminer.__version__)"
+echo "🔹 Creating /var/lib/gdprfs/.gdprignore ..."
+sudo touch /var/lib/gdprfs/.gdprignore
+sudo chmod 600 /var/lib/gdprfs/.gdprignore # permission: root: read/write, group: none, others: none
+sudo chown root:root /var/lib/gdprfs/.gdprignore
+
+echo "# GDPR manual PII declaration patterns" | sudo tee /var/lib/gdprfs/.gdprignore > /dev/null
+echo "✅ .gdprignore created at /var/lib/gdprfs/.gdprignore (root-only, API-managed)"
 
 echo "🎉 Setup complete!"

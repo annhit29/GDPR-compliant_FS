@@ -129,8 +129,12 @@ For this, one needs an API key for the LLM model.
 
 
 # System Design (Assumption/Choices)
+Dec 3 2025
 ## Folder name, then filename, only then file content!
 We use Strong **Inheritance**:
 1. Folder name determines the owner, so all files inside a folder belong to that external person.
 2. Else, If the filename contains a name, then the file clearly belongs to that external person.
 3. Else, if folder or filename have not already identified the external person, then file content is scanned. 
+
+## `.gdprignore` file
+internal users use the internal platform interface to declare the PII manually. These declarations will be stored in the `.gdprignore` file (a `.gitignore`-like file).
