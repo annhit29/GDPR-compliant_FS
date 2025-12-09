@@ -25,6 +25,33 @@ def _is_temp_name(fuse_path: str) -> bool:
         or name.endswith(".csv#") # LibreOffice temp variant
     )
 
+def _uids_from_path_string(path_str: str, session):
+    """
+    Infer personal data purely from the *path* (filename + folders).
+    Returns a list of Person objects.
+    """
+    path_lc = path_str.lower()
+    persons = []
+
+    for person in session.query(Person).all():
+        first = (person.first_name or "").strip().lower()
+        last  = (person.last_name  or "").strip().lower()
+        full = f"{first} {last}".strip()
+
+        if not first and not last:
+            continue
+
+        # Match full name, or first, or last, in path
+        if full and full in path_lc:
+            persons.append(person)
+        elif first and first in path_lc:
+            persons.append(person)
+        elif last and last in path_lc:
+            persons.append(person)
+
+    return persons
+
+
 def _extract_pdf_to_text(abs_path: str) -> str:
     """
     Extract text from a PDF using pdftotext.
@@ -124,13 +151,6 @@ def _get_text_for_matching(p: Path) -> str | None:
     print("[DB][EXTRACT] Unsupported file type → returning None")
     return None
 
-
-# def _read_text_safe(p: Path) -> str | None:
-#     try:
-#         return p.read_text(encoding="utf-8", errors="ignore")
-#     except Exception:
-#         return None  # for binary file or unreadable, return None, not ""
-
 def rescan_all_upper_files():
     """Rescan all files in /upper to (re)create missing mappings."""
     upper_dir = Path("/var/lib/gdprfs/upper")
@@ -184,9 +204,12 @@ def mark_file_deleted(file_path: str):
 
 def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", old_name: str = None):
     """
-    1. Reads the file contents (in /upper),
-    2. Checks if a `username` (first_name + last_name OR either one) appears,
-    3. Creates/updates the Person ↔ File mapping if so.
+    1. check path = (foldername or filename)  
+    2. IF path already reveals personal data → STOP  
+    3. else, check content (file content):
+        1. Reads the file contents
+        2. Checks if a `username` (first_name + last_name OR either one) appears,
+        3. Creates/updates the Person ↔ File mapping if so.
     """
 
     # ignore temp files
@@ -197,16 +220,12 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
     p = Path(abs_upper_path)
     if not p.exists() or not p.is_file():
         return
-
-    content = _get_text_for_matching(p) #_read_text_safe(p)
-    if content is None: # binary or unreadable file; but allow empty text files to still be registered in DB
-        return
     
     stat = os.stat(p)
     created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
     modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
     accessed = datetime.fromtimestamp(stat.st_atime).strftime("%Y-%m-%d %H:%M:%S")
-        
+
     file_id = p.name # we map on the file name (simple prototype)
 
     with Session() as session:
@@ -239,6 +258,24 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
             f.accessed_at = accessed
             f.last_action = context
         
+        # 1. infer PII from folder name or filename
+        path_persons = _uids_from_path_string(str(p), session)
+        if path_persons:
+            for person in path_persons:
+                if f not in person.files:
+                    person.files.append(f)
+                    print(f"[DB foldername or filename] Path-based PII: linked {person.first_name} {person.last_name} ↔ {file_id}")
+
+            # IMPORTANT: stop here: coz no need to analyze contents, coz path reveals PII
+            session.commit()
+            print(f"[DB foldername or filename] Updated mapping for {file_id} (context={context}, path-based only)")
+            return
+
+        # 2. fallback: infer PII from file content
+        content = _get_text_for_matching(p)
+        if content is None: # binary or unreadable file; but allow empty text files to still be registered in DB
+            return
+
         if content.strip():
             # 2) Loop over known users (Person):
             people = session.query(Person).all()
@@ -257,11 +294,10 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
                 if full in lc or first in lc or last in lc:
                     if f not in person.files:
                         person.files.append(f)
-                        print(f"[DB] Linked {person.first_name} {person.last_name} ↔ {file_id}")
+                        print(f"[DB file content] Linked {person.first_name} {person.last_name} ↔ {file_id}")
 
         session.commit()
-        print(f"[DB] Updated mapping for {file_id} (context={context})")
-
+        print(f"[DB file content] Updated mapping for {file_id} (context={context}, content-based)")
 
 def sync_users_from_external():
     """
