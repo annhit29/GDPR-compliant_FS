@@ -272,11 +272,11 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
             for person in folder_persons:
                 if f not in person.files:
                     person.files.append(f)
-                    print(f"[DB folder] Linked (folder) {person.first_name} {person.last_name} ↔ {file_id}")
+                    print(f"[lazy DB folder] Linked (folder) {person.first_name} {person.last_name} ↔ {file_id}")
 
             # IMPORTANT: stop here: coz no need to analyze contents, coz path reveals PII
             session.commit()
-            print(f"[DB folder] Finished mapping for {file_id} (context={context}), folder-based only")
+            print(f"[lazy DB folder] Finished mapping for folder `{p.parent.name}` ({file_id}, context={context}), folder-based only")
             return   # <--- STRONG INHERITANCE: STOP HERE
 
         # 2. Filename-level ownership

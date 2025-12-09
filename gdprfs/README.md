@@ -126,3 +126,11 @@ LLM analyzer: 5005 (why not, because it is not used)
 
 # LLM Analyzer
 For this, one needs an API key for the LLM model.
+
+
+# System Design (Assumption/Choices)
+## Folder name, then filename, only then file content!
+We use Strong **Inheritance**:
+1. Folder name determines the owner, so all files inside a folder belong to that external person.
+2. Else, If the filename contains a name, then the file clearly belongs to that external person.
+3. Else, if folder or filename have not already identified the external person, then file content is scanned. 
