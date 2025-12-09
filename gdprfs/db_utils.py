@@ -41,42 +41,42 @@ def _extract_pdf_to_text(abs_path: str) -> str:
         print("[PDF ERROR]", e)
         return ""
 
-# def _extract_docx_to_text(abs_path: str) -> str:
-#     """Extract visible text from a DOCX file."""
-#     try:
-#         doc = Document(abs_path)
-#         paras = [p.text for p in doc.paragraphs if p.text.strip()]
-#         return "\n".join(paras)
-#     except Exception as e:
-#         print("[DOCX ERROR]", e)
-#         return ""
+def _extract_docx_to_text(abs_path: str) -> str:
+    """Extract visible text from a DOCX file."""
+    try:
+        doc = Document(abs_path)
+        paras = [p.text for p in doc.paragraphs if p.text.strip()]
+        return "\n".join(paras)
+    except Exception as e:
+        print("[DOCX ERROR]", e)
+        return ""
 
-# def _extract_odt_to_text(abs_path: str) -> str:
-#     """Extract visible text from an ODT file."""
-#     try:
-#         doc = load_odt(abs_path)
-#         paras = doc.getElementsByType(P)
-#         out = []
-#         for p in paras:
-#             out.append("".join(
-#                 n.data for n in p.childNodes if hasattr(n, "data")
-#             ))
-#         return "\n".join(out)
-#     except Exception as e:
-#         print("[ODT ERROR]", e)
-#         return ""
+def _extract_odt_to_text(abs_path: str) -> str:
+    """Extract visible text from an ODT file."""
+    try:
+        doc = load_odt(abs_path)
+        paras = doc.getElementsByType(P)
+        out = []
+        for p in paras:
+            out.append("".join(
+                n.data for n in p.childNodes if hasattr(n, "data")
+            ))
+        return "\n".join(out)
+    except Exception as e:
+        print("[ODT ERROR]", e)
+        return ""
 
-# def _extract_excel_to_text(abs_path: str) -> str:
-#     """Extract text from the first sheet of an Excel file."""
-#     try:
-#         df = pd.read_excel(abs_path, dtype=str)
-#         rows = []
-#         for _, row in df.iterrows():
-#             rows.append(" ".join(str(x) for x in row.values if str(x) != "nan"))
-#         return "\n".join(rows)
-#     except Exception as e:
-#         print("[XLSX ERROR]", e)
-#         return ""
+def _extract_excel_to_text(abs_path: str) -> str:
+    """Extract text from the first sheet of an Excel file."""
+    try:
+        df = pd.read_excel(abs_path, dtype=str)
+        rows = []
+        for _, row in df.iterrows():
+            rows.append(" ".join(str(x) for x in row.values if str(x) != "nan"))
+        return "\n".join(rows)
+    except Exception as e:
+        print("[XLSX ERROR]", e)
+        return ""
 
 def _get_text_for_matching(p: Path) -> str | None:
     """
@@ -105,19 +105,23 @@ def _get_text_for_matching(p: Path) -> str | None:
     if ext == ".pdf":
         # print("[DB][EXTRACT] Using PDF extractor")
         text = _extract_pdf_to_text(str(p))
-        print("[DB][EXTRACT] PDF extractor output preview (first 200 chars):")
-        print(text[:200])
+        # print("[DB][EXTRACT] PDF extractor output preview (first 200 chars):")
+        # print(text[:200])
         return text
 
-    # if ext == ".docx":
-    #     return _extract_docx_to_text(str(p))
-    # if ext == ".odt":
-    #     return _extract_odt_to_text(str(p))
-    # if ext in [".xls", ".xlsx"]:
-    #     return _extract_excel_to_text(str(p))
+    if ext == ".docx":
+        return _extract_docx_to_text(str(p))
+    if ext == ".odt":
+        print("[DB][EXTRACT] Using ODT extractor")
+        text = _extract_odt_to_text(str(p))
+        print("[DB][EXTRACT] ODT extractor output preview (first 200 chars):")
+        print(text[:200])
+        return text
+    if ext in [".xls", ".xlsx"]:
+        return _extract_excel_to_text(str(p))
 
     # Unsupported binary format
-    # print("[DB][EXTRACT] Unsupported file type → returning None")
+    print("[DB][EXTRACT] Unsupported file type → returning None")
     return None
 
 
