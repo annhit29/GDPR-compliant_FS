@@ -51,6 +51,14 @@ def _uids_from_path_string(path_str: str, session):
 
     return persons
 
+def _uids_from_folder(p: Path, session):
+    """This checks only the folder name (not the full path)."""
+    folder = p.parent.name.lower()
+    return _uids_from_path_string(folder, session)
+
+def _uids_from_filename(p: Path, session):
+    """This checks only the filename, not folders."""
+    return _uids_from_path_string(p.name.lower(), session)
 
 def _extract_pdf_to_text(abs_path: str) -> str:
     """
@@ -204,9 +212,9 @@ def mark_file_deleted(file_path: str):
 
 def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", old_name: str = None):
     """
-    1. check path = (foldername or filename)  
-    2. IF path already reveals personal data → STOP  
-    3. else, check content (file content):
+    1. If the folder name contains a person → ALL files in that folder belong to that person. STOP. (Never scan filename or content.)
+    2. If the filename contains a person → the file belongs to that person. STOP. (Never scan content.)
+    3. Only if 1 and 2 found nothing → scan file content
         1. Reads the file contents
         2. Checks if a `username` (first_name + last_name OR either one) appears,
         3. Creates/updates the Person ↔ File mapping if so.
@@ -257,21 +265,34 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
             f.modified_at = modified
             f.accessed_at = accessed
             f.last_action = context
-        
-        # 1. infer PII from folder name or filename
-        path_persons = _uids_from_path_string(str(p), session)
-        if path_persons:
-            for person in path_persons:
+
+        # 1. Folder-level ownership
+        folder_persons = _uids_from_folder(p, session)
+        if folder_persons:
+            for person in folder_persons:
                 if f not in person.files:
                     person.files.append(f)
-                    print(f"[DB foldername or filename] Path-based PII: linked {person.first_name} {person.last_name} ↔ {file_id}")
+                    print(f"[DB folder] Linked (folder) {person.first_name} {person.last_name} ↔ {file_id}")
 
             # IMPORTANT: stop here: coz no need to analyze contents, coz path reveals PII
             session.commit()
-            print(f"[DB foldername or filename] Updated mapping for {file_id} (context={context}, path-based only)")
-            return
+            print(f"[DB folder] Finished mapping for {file_id} (context={context}), folder-based only")
+            return   # <--- STRONG INHERITANCE: STOP HERE
 
-        # 2. fallback: infer PII from file content
+        # 2. Filename-level ownership
+        filename_persons = _uids_from_filename(p, session)
+        if filename_persons:
+            for person in filename_persons:
+                if f not in person.files:
+                    person.files.append(f)
+                    print(f"[DB filename] Linked (filename) {person.first_name} {person.last_name} ↔ {file_id}")
+            
+            # IMPORTANT: stop here: coz no need to analyze contents, coz path reveals PII
+            session.commit()
+            print(f"[DB filename] Finished mapping for {file_id} (context={context}), filename-based only")
+            return   # <--- STRONG INHERITANCE: STOP HERE
+
+        # 3. fallback: infer PII from file content (only if folder+filename gave nothing)
         content = _get_text_for_matching(p)
         if content is None: # binary or unreadable file; but allow empty text files to still be registered in DB
             return

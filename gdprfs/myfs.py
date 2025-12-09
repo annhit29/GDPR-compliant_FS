@@ -652,12 +652,29 @@ class MyFS(Fuse):
         _ensure_parent(m)
         m.mkdir(exist_ok=True)
 
-        # Update DB
-        try:
-            update_file_mapping_for_upper(str(p.resolve()), context="mkdir")
-            update_file_metadata(str(p.resolve()), "mkdir")
-        except Exception as e:
-            print(f"[DB] Warning: mkdir mapping failed for {p}: {e}")
+        # ---- Folder-level inheritance detection (strong inheritance) ----
+        from gdprfs.db_utils import _uids_from_path_string
+        folder_name = p.name.lower()
+
+        with Session() as session:
+            owners = _uids_from_path_string(folder_name, session)
+
+            if owners:
+                for person in owners:
+                    print(f"[lazy DB folder] Folder '{folder_name}' recognized as belonging to {person.first_name} {person.last_name}")
+
+                print(f"[lazy DB folder] Folder-level inheritance activated (context=mkdir)")
+            else:
+                print(f"[lazy DB folder] No matching person for folder '{folder_name}'")
+
+        # No DB Update here, coz directories are not stored in File table! todo: create table for folders or use existing files, only wait for files inside the folder?
+
+        # # Update DB
+        # try:
+        #     update_file_mapping_for_upper(str(p.resolve()), context="mkdir")
+        #     update_file_metadata(str(p.resolve()), "mkdir")
+        # except Exception as e:
+        #     print(f"[DB] Warning: mkdir mapping failed for {p}: {e}")
 
         return 0
 
