@@ -7,6 +7,35 @@ from docx import Document
 from odf.opendocument import load as load_odt
 from odf.text import P
 import pandas as pd
+from fnmatch import fnmatch
+
+GDPROWNER_PATH = Path("/var/lib/gdprfs/.gdprowner")
+
+def load_gdprowner():
+    """
+    Parse lines like:
+       jdoe: doe/**
+       aturing: research/*
+    Returns a list of (uid, pattern)
+    """
+    rules = []
+    if GDPROWNER_PATH.exists():
+        for line in GDPROWNER_PATH.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if ":" not in line:
+                continue
+            uid, pattern = line.split(":", 1)
+            rules.append( (uid.strip(), pattern.strip()) )
+    return rules
+
+GDPROWNER_RULES = load_gdprowner()# global cache. This is loaded only once at startup of the FUSE daemon.
+
+# def reload_gdprignore():
+#     """Update the global variable in-place, so every function using GDPRIGNORE_PATTERNS automatically sees the updated patterns."""
+#     global GDPRIGNORE_PATTERNS
+#     GDPRIGNORE_PATTERNS = load_gdprignore()
 
 def _is_temp_name(fuse_path: str) -> bool:
     # print("in _is_temp_name")
@@ -24,6 +53,13 @@ def _is_temp_name(fuse_path: str) -> bool:
         or name.endswith(".tmp") # generic temp
         or name.endswith(".csv#") # LibreOffice temp variant
     )
+
+def _manual_owner_for_path(p: Path):
+    rel = str(p).replace("/var/lib/gdprfs/upper/", "")
+    for uid, pattern in GDPROWNER_RULES:
+        if fnmatch(rel, pattern):
+            return uid
+    return None
 
 def _uids_from_path_string(path_str: str, session):
     """
@@ -210,6 +246,7 @@ def mark_file_deleted(file_path: str):
             session.commit()
             print(f"[DB] Deleted DB record for {file_id}")
 
+# todo: cont fix indentation, static now (then dynamic w/ internal user api)
 def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", old_name: str = None):
     """
     1. If the folder name contains a person → ALL files in that folder belong to that person. STOP. (Never scan filename or content.)
@@ -226,22 +263,53 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
         return
 
     p = Path(abs_upper_path)
-    if not p.exists() or not p.is_file():
-        return
-    
-    stat = os.stat(p)
-    created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
-    modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-    accessed = datetime.fromtimestamp(stat.st_atime).strftime("%Y-%m-%d %H:%M:%S")
 
-    file_id = p.name # we map on the file name (simple prototype)
+    owner_uid = _manual_owner_for_path(p)
+    if owner_uid:
+        with Session() as session:
+            print(f"[GDPROWNER] Manual owner override: {p} → {owner_uid}")
 
-    with Session() as session:
+            f = session.query(File).filter_by(file_id=p.name).first()
+            if not f:
+                # create file entry if missing
+                stat = os.stat(p)
+                created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+                modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                accessed = datetime.fromtimestamp(stat.st_atime).strftime("%Y-%m-%d %H:%M:%S")
+
+                f = File(
+                    file_id=p.name,
+                    abs_path=str(p.resolve()),
+                    created_at=created,
+                    modified_at=modified,
+                    accessed_at=accessed,
+                    last_action=context
+                )
+                session.add(f)
+            owner = session.query(Person).filter_by(uid=owner_uid).first()
+            if owner and f not in owner.files:
+                owner.files.append(f)
+
+            session.commit()
+            print(f"[GDPROWNER] Assigned {file_id} to {owner_uid} (manual)")
+            return   # STOP here, but DO NOT SKIP ENFORCER ACCESS
+
+        if not p.exists() or not p.is_file():
+            return
+        
+        stat = os.stat(p)
+        created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+        modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        accessed = datetime.fromtimestamp(stat.st_atime).strftime("%Y-%m-%d %H:%M:%S")
+
+        file_id = p.name # we map on the file name (simple prototype)
+
+
         # 1) Ensure File entry exists:
         # f = session.query(File).filter_by(file_id=file_id).first()
         f = None
         if context == "rename" and old_name:
-            f = session.query(File).filter_by(file_id=old_name).first()
+            # f = session.query(File).filter_by(file_id=old_name).first()
             if f:
                 print(f"[DB] Detected rename {old_name} → {file_id}")
                 f.file_id = file_id
