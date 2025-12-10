@@ -210,3 +210,7 @@ An intenal user manually declares `.gdprowner` to contain
 jdoe: doe/**
 ```
 then ctrl+O, Enter, ctrl+X
+
+todo: cont:
+Now, make it dynamic, i.e.
+Internal users can declare or remove file/folder owners at runtime, through your Flask API (internal consent platform), **without restarting the FUSE daemon.**
