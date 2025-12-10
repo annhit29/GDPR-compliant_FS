@@ -131,10 +131,12 @@ For this, one needs an API key for the LLM model.
 # System Design (Assumption/Choices)
 Dec 3 2025
 ## Folder name, then filename, only then file content!
+See `def update_file_mapping_for_upper`
+1. If gdprowner matches, then we should NOT run folder-name logic.
 We use Strong **Inheritance**:
-1. Folder name determines the owner, so all files inside a folder belong to that external person.
-2. Else, If the filename contains a name, then the file clearly belongs to that external person.
-3. Else, if folder or filename have not already identified the external person, then file content is scanned. 
+2. `[Lazy DB Folder]`: Folder name determines the owner, so all files inside a folder belong to that external person. 
+3. Else, If the filename contains a name, then the file clearly belongs to that external person.
+4. Else, if folder or filename have not already identified the external person, then file content is scanned. 
 
 ## `.gdprowner` file
 internal users use the internal platform interface to declare the PII manually. These declarations will be stored in the `.gdprowner` file (a `.gitignore`-like file).
@@ -146,7 +148,65 @@ internal users use the internal platform interface to declare the PII manually. 
 | Mapping           | MUST map file → person            |
 | Analogy           | `.gdprowner`                      |
 
-Eg: `.gdprowner` contains
+Eg: An intenal user manually declares `.gdprowner` to contain
 ```
 jdoe: doe/**
 ```
+with the folder structure
+```
+upper/
+ └── doe/
+      ├── dd.txt
+      └── d.txt
+```
+
+This means
+> “Any file inside the folder `doe/` (and all its subfolders) is owned by user `jdoe` because the internal user manually declared it so.”
+
+Thus, the system says "No need to scan filename or content. We override automatically: these files belong to `jdoe`."
+
+Csq:
+“EVERY file in folder `doe/` belongs to `jdoe` because an intenral user explicitly said so.”
+
+## Lazy DB Folder
+`[Lazy DB Folder]` is only triggered when folder looks like a person, based on name matching logic.
+> “The folder name looks like it belongs to John Doe, so all files inherit ownership from the folder.”
+
+This is weaker than `.gdprowner` where internal user declares manually and explicitely through the internal platform interface.
+
+Eg:
+1. If an internal user creates a folder `basin/`
+```
+[MKDIR] Creating directory /var/lib/gdprfs/upper/basin
+[lazy DB folder] Folder 'basin' recognized as belonging to David Basin
+[lazy DB folder] Folder-level inheritance activated (context=mkdir)
+```
+then the system uses the name matching logic to determine if this folder belongs to DS `dbasin`.
+In this case, Yes. So all everything inside `basin/` will be mapped to personid `dbasin` in the `person_file_map` table.
+
+2. Indeed
+2.1. Inside this folder, we create a file,
+```
+[CREATE] Synced /var/lib/gdprfs/upper/basin/Empty Document → mirror
+[lazy DB folder] Linked (folder) David Basin ↔ Empty Document
+[lazy DB folder] Finished mapping for folder `basin` (dbasin ↔ Empty Document, context=create), folder-based only
+[DB] Updated metadata for Empty Document (last_action=create)
+```
+And we see it is immidiately mapped to user `dbasin`. This mapping is stored in the `person_file_map` table.
+
+2.2. After renaming the filename,
+```
+[DB] Detected rename Empty Document → b.txt
+[lazy DB folder] Finished mapping for folder `basin` (dbasin ↔ b.txt, context=rename), folder-based only
+[DB] Updated metadata for b.txt (last_action=rename)
+[DB] Mapped after rename → /basin/b.txt
+```
+We see the `dbasin ↔ b.txt` mapping. And this is stored in the `person_file_map` table.
+
+
+Note: for static testing, i .e. assuming internal user interacts via the internal platform to declare manually, but in the reality, use `sudo nano /var/lib/gdprfs/.gdprowner` to declare ownership of a folder or a file of a DS, eg:
+An intenal user manually declares `.gdprowner` to contain
+```
+jdoe: doe/**
+```
+then ctrl+O, Enter, ctrl+X

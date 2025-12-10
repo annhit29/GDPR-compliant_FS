@@ -1,3 +1,4 @@
+from ast import pattern
 from pathlib import Path
 from gdprfs.models import Person, File, Session
 from datetime import datetime
@@ -31,6 +32,7 @@ def load_gdprowner():
     return rules
 
 GDPROWNER_RULES = load_gdprowner()# global cache. This is loaded only once at startup of the FUSE daemon.
+print(f"[INIT] Loaded gdprowner rules: {GDPROWNER_RULES}") # [INIT] Loaded gdprowner rules: [('jdoe', 'doe/**')]
 
 # def reload_gdprignore():
 #     """Update the global variable in-place, so every function using GDPRIGNORE_PATTERNS automatically sees the updated patterns."""
@@ -246,39 +248,46 @@ def mark_file_deleted(file_path: str):
             session.commit()
             print(f"[DB] Deleted DB record for {file_id}")
 
-# todo: cont fix indentation, static now (then dynamic w/ internal user api)
 def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", old_name: str = None):
     """
-    1. If the folder name contains a person → ALL files in that folder belong to that person. STOP. (Never scan filename or content.)
-    2. If the filename contains a person → the file belongs to that person. STOP. (Never scan content.)
-    3. Only if 1 and 2 found nothing → scan file content
-        1. Reads the file contents
-        2. Checks if a `username` (first_name + last_name OR either one) appears,
-        3. Creates/updates the Person ↔ File mapping if so.
+    Update the database mapping for a file in /upper, based on its path and content.
+    Steps:
+    1. Manual owner override by internal person (gdprowner)
+    2. Folder-level ownership
+    3. Filename-level ownership
+    4. Content-based ownership inference
     """
 
-    # ignore temp files
+    # 0. Ignore temporary editor files
     if _is_temp_name(abs_upper_path):
         print(f"[DB] Ignoring temporary file {abs_upper_path}")
         return
 
     p = Path(abs_upper_path)
+    file_id = p.name
 
+    # 1. Manual owner override by internal person (gdprowner)
     owner_uid = _manual_owner_for_path(p)
     if owner_uid:
-        with Session() as session:
-            print(f"[GDPROWNER] Manual owner override: {p} → {owner_uid}")
+        # avoid os.stat() crash if file does not exist
+        if not p.exists():
+            print(f"[GDPROWNER] Path matched rule but file missing: {p}")
+            return
 
-            f = session.query(File).filter_by(file_id=p.name).first()
+        with Session() as session:
+            print(f"[GDPROWNER] Manual override by internal person, in path {p}: assigning {file_id} → {owner_uid} (skips folder/filename/content)")
+
+            f = session.query(File).filter_by(file_id=file_id).first()
+
+            # ensure File exists
             if not f:
-                # create file entry if missing
                 stat = os.stat(p)
                 created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
                 modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
                 accessed = datetime.fromtimestamp(stat.st_atime).strftime("%Y-%m-%d %H:%M:%S")
 
                 f = File(
-                    file_id=p.name,
+                    file_id=file_id,
                     abs_path=str(p.resolve()),
                     created_at=created,
                     modified_at=modified,
@@ -286,34 +295,38 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
                     last_action=context
                 )
                 session.add(f)
+
+            # assign manual owner
             owner = session.query(Person).filter_by(uid=owner_uid).first()
             if owner and f not in owner.files:
                 owner.files.append(f)
 
             session.commit()
-            print(f"[GDPROWNER] Assigned {file_id} to {owner_uid} (manual)")
-            return   # STOP here, but DO NOT SKIP ENFORCER ACCESS
+            print(f"[GDPROWNER] DONE: {file_id} is now owned by Person(uid='{owner_uid}') (manual override by internal person in path {p})")
 
-        if not p.exists() or not p.is_file():
-            return
-        
-        stat = os.stat(p)
-        created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
-        modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-        accessed = datetime.fromtimestamp(stat.st_atime).strftime("%Y-%m-%d %H:%M:%S")
+        return  # STOP here (manual override wins)
 
-        file_id = p.name # we map on the file name (simple prototype)
+    # If file does not exist → nothing to do
+    if not p.exists() or not p.is_file():
+        return
 
+    # Normal DB logic
+    stat = os.stat(p)
+    created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+    modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+    accessed = datetime.fromtimestamp(stat.st_atime).strftime("%Y-%m-%d %H:%M:%S")
 
-        # 1) Ensure File entry exists:
-        # f = session.query(File).filter_by(file_id=file_id).first()
+    with Session() as session:
+
+        # Ensure file entry exists
         f = None
         if context == "rename" and old_name:
-            # f = session.query(File).filter_by(file_id=old_name).first()
+            f = session.query(File).filter_by(file_id=old_name).first()
             if f:
                 print(f"[DB] Detected rename {old_name} → {file_id}")
                 f.file_id = file_id
                 f.abs_path = str(p.resolve())
+        
         if not f:
             f = session.query(File).filter_by(file_id=file_id).first()
 
@@ -334,7 +347,7 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
             f.accessed_at = accessed
             f.last_action = context
 
-        # 1. Folder-level ownership
+        # 2. Folder-level ownership
         folder_persons = _uids_from_folder(p, session)
         if folder_persons:
             for person in folder_persons:
@@ -344,10 +357,10 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
 
             # IMPORTANT: stop here: coz no need to analyze contents, coz path reveals PII
             session.commit()
-            print(f"[lazy DB folder] Finished mapping for folder `{p.parent.name}` ({file_id}, context={context}), folder-based only")
+            print(f"[lazy DB folder] Finished mapping for folder `{p.parent.name}` ({person.uid} ↔ {file_id}, context={context}), folder-based only")
             return   # <--- STRONG INHERITANCE: STOP HERE
 
-        # 2. Filename-level ownership
+        # 3. Filename-level ownership
         filename_persons = _uids_from_filename(p, session)
         if filename_persons:
             for person in filename_persons:
@@ -360,7 +373,7 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
             print(f"[DB filename] Finished mapping for {file_id} (context={context}), filename-based only")
             return   # <--- STRONG INHERITANCE: STOP HERE
 
-        # 3. fallback: infer PII from file content (only if folder+filename gave nothing)
+        # 4. fallback: infer PII from file content (only if folder+filename gave nothing)
         content = _get_text_for_matching(p)
         if content is None: # binary or unreadable file; but allow empty text files to still be registered in DB
             return
