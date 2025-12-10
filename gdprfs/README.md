@@ -136,5 +136,17 @@ We use Strong **Inheritance**:
 2. Else, If the filename contains a name, then the file clearly belongs to that external person.
 3. Else, if folder or filename have not already identified the external person, then file content is scanned. 
 
-## `.gdprignore` file
-internal users use the internal platform interface to declare the PII manually. These declarations will be stored in the `.gdprignore` file (a `.gitignore`-like file).
+## `.gdprowner` file
+internal users use the internal platform interface to declare the PII manually. These declarations will be stored in the `.gdprowner` file (a `.gitignore`-like file).
+| Feature           |  |
+| ----------------- | --------------------------------- |
+| Purpose           | manually declare PII ownership    |
+| Effect            | file becomes PERSONAL data        |
+| Enforcer behavior | controlled by consent             |
+| Mapping           | MUST map file → person            |
+| Analogy           | `.gdprowner`                      |
+
+Eg: `.gdprowner` contains
+```
+jdoe: doe/**
+```

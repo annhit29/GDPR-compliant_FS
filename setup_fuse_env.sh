@@ -102,16 +102,13 @@ EOF
 sudo mv /tmp/redacted_template.pdf /var/lib/gdprfs/redacted_template.pdf
 sudo chmod 644 /var/lib/gdprfs/redacted_template.pdf #permission: root: read/write, group: read, others: read
 sudo chown root:root /var/lib/gdprfs/redacted_template.pdf
-
 echo "✅ redacted_template.pdf installed."
 
-
-echo "🔹 Creating /var/lib/gdprfs/.gdprignore ..."
-sudo touch /var/lib/gdprfs/.gdprignore
-sudo chmod 600 /var/lib/gdprfs/.gdprignore # permission: root: read/write, group: none, others: none
-sudo chown root:root /var/lib/gdprfs/.gdprignore
-
-echo "# GDPR manual PII declaration patterns" | sudo tee /var/lib/gdprfs/.gdprignore > /dev/null
-echo "✅ .gdprignore created at /var/lib/gdprfs/.gdprignore (root-only, API-managed)"
+echo "🔹 Creating /var/lib/gdprfs/.gdprowner ..."
+sudo touch /var/lib/gdprfs/.gdprowner
+sudo chmod 600 /var/lib/gdprfs/.gdprowner # permission: root: read/write, group: none, others: none
+sudo chown root:root /var/lib/gdprfs/.gdprowner
+echo "# GDPR manual PII declaration patterns" | sudo tee /var/lib/gdprfs/.gdprowner > /dev/null
+echo "✅ .gdprowner created at /var/lib/gdprfs/.gdprowner (root-only, API-managed)"
 
 echo "🎉 Setup complete!"
