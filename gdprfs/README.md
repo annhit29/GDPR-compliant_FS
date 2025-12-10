@@ -130,10 +130,10 @@ For this, one needs an API key for the LLM model.
 
 # System Design (Assumption/Choices)
 Dec 3 2025
-## Folder name, then filename, only then file content!
+## PII manual explicit declaration then detection in Folder name, then filename, only then file content!
 See `def update_file_mapping_for_upper`
 1. If gdprowner matches, then we should NOT run folder-name logic.
-We use Strong **Inheritance**:
+We use Strong **Inheritance** for PII detection:
 2. `[Lazy DB Folder]`: Folder name determines the owner, so all files inside a folder belong to that external person. 
 3. Else, If the filename contains a name, then the file clearly belongs to that external person.
 4. Else, if folder or filename have not already identified the external person, then file content is scanned. 
