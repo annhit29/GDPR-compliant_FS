@@ -22,12 +22,12 @@ import json
 import subprocess # so the poller runs independently of the FUSE main loop, i.e. one daemon for FUSE, one daemon for poller
 from pypdf import PdfReader, PdfWriter
 from io import BytesIO
+from fuse import Stat
+from errno import ENOENT
 
 PDF_CACHE = {}
 REDACTED_TEMPLATE = Path("/var/lib/gdprfs/redacted_template.pdf")
 # todo: 0) d'autres formats de fichiers <- redacted qd lecture mm pour les txt (suppression handler)
-# 1) filename dit qqch aussi
-# 2) folder-level <- soit on lit le nom du dossier, soit on declare explicitement le PII (cf 3))
 # 3) declarer manuellement le PII (dans le internal interface, par l'utilisateur interne) <- inspiration: .gitignore
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
@@ -324,11 +324,20 @@ instrumentation_mapping = InstrumentationMapping({
 
 # ========== PEP ==========
 def events_for_read_or_skip(path):
-    # If normal files => keep old behavior
-    if not str(path).lower().endswith(".pdf"):
-        return events_for_read(path)
-    # If PDF => skip full-file Use events
-    return []
+    lower = str(path).lower()
+
+    # Skip full-file events for formats with custom enforcement
+    if lower.endswith(".pdf") or lower.endswith(".txt"):
+        return []  # Use events emitted manually inside read()
+
+    return events_for_read(path)
+
+# def events_for_read_or_skip(path):
+#     # If normal files => keep old behavior
+#     if not str(path).lower().endswith(".pdf"):
+#         return events_for_read(path)
+#     # If PDF => skip full-file Use events
+#     return []
 
 pep = PEP(
     mapping={
@@ -608,9 +617,6 @@ class MyFS(Fuse):
         """
         # print(f"[DEBUG getattr] called with path={path}", flush=True)
 
-        from fuse import Stat
-        from errno import ENOENT
-
         # Find the real file inside /upper
         real_path = _upper(path)
 
@@ -627,14 +633,22 @@ class MyFS(Fuse):
 
         # Fill the FUSE Stat structure
         st = Stat()
+
+        # Copy actual metadata
         st.st_mode  = s.st_mode      # file type + permissions
         st.st_nlink = s.st_nlink     # number of hard links
-        st.st_size = s.st_size      # file size in bytes
         st.st_uid   = s.st_uid       # owner user id (still needed for Linux)
         st.st_gid   = s.st_gid       # group id
         st.st_atime = int(s.st_atime)  # access time
         st.st_mtime = int(s.st_mtime)  # modification time
         st.st_ctime = int(s.st_ctime)  # change/creation time
+
+        # Default: real size
+        st.st_size = s.st_size      # file size in bytes
+
+        # For TXT files, make sure size is at least length of "REDACTED"
+        if real_path.suffix.lower() == ".txt":
+            st.st_size = max(st.st_size, len(b"REDACTED")) # len(b"REDACTED") = 8 bytes
 
         return st
 
@@ -778,7 +792,47 @@ class MyFS(Fuse):
 
             return redacted_bytes[offset:offset + size]
 
-        # =========== CASE2: non-pdf files ===========        
+        # =========== CASE2: TXT full-file enforcement ===========
+        if str(p).lower().endswith(".txt"):
+            print("[TXT] Full-file enforcement for TXT read")
+
+            # Determine file_id and data subjects
+            fid, uids = _get_file_and_user(_upper(path))
+            fid = fid or os.path.basename(path)
+
+            # If no PII → normal read
+            if not uids:
+                print("[TXT] No personal data → returning normal content")
+                with open(p, "rb") as f:
+                    f.seek(offset)
+                    chunk = f.read(size)
+                update_file_mapping_for_upper(str(p.resolve()), context="read")
+                update_file_metadata(str(p.resolve()), "read")
+                return chunk
+
+            # Build Use events for all uids
+            events = [Event("Use", fid, uid) for uid in uids]
+
+            # Ask the enforcer whether reading should be suppressed
+            cau, sup, _, _ = logger.log(events, threading.Event(), False)
+
+            if sup:
+                print("[TXT] Suppressed → returning REDACTED")
+                red = b"REDACTED"
+                return red[offset: offset + size]  # respect offset+size like PDF/ODT
+
+            # Otherwise → allow full file text
+            with open(p, "rb") as f:
+                f.seek(offset)
+                chunk = f.read(size)
+
+            update_file_mapping_for_upper(str(p.resolve()), context="read")
+            update_file_metadata(str(p.resolve()), "read")
+
+            return chunk
+
+
+        # =========== CASE3: Fallback case: non-pdf and non-txt files ===========        
         # return only the requested slice, as bytes
         with open(p, "rb") as f: # the file is being read from p i.e. from /upper 
             f.seek(offset)
