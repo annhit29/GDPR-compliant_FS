@@ -50,7 +50,7 @@ observable event UseNonPII
   exUid : user_id
 
 #5. the assumptions 
-#for art5a <- these are the obligations
+#for art5a's obligations
 assume true IsLawful #todo: delete this assumption when writing art6, coz o/w art5a will always never fail.
 assume true IsFair
 assume true IsTransparent
@@ -88,7 +88,10 @@ rule "r_PersonalData"
   refine
     PersonalData(d, ds) #l34
 
-#art5b rule "must_have_purpose" l157
+#art5b rule "must_have_purpose" (l157)
+# also for art5b rule "purpose_conditions" (l183)
+#because gdpr.lex's rule "purpose_conditions" is triggered by HasPurpose event, i.e.
+#"Whenever HasPurpose exists => check these (gdpr.lex l187-189) obligations."
 internal predicate SessionActive
   ds : data_subject
   p  : purpose
@@ -96,14 +99,19 @@ internal predicate SessionActive
 rule "r_SessionActive_start"
   whenever 
     StartSession(ds, p, r)
-  constitute #:= create an event
+  constitute #:= create a state
     SessionActive(ds, p)
 
 rule "r_SessionActive_stop"
   whenever 
     StopSession(ds)
-  revoke #todo or other lex keywords for "STOP the current active session"?
+  terminate #todo or other lex keywords for "STOP the current active session"?
     SessionActive(ds, p)
+
+#for art5b rule "purpose_conditions"'s obligations (l183)
+assume true IsSpecified
+assume true IsExplicit
+assume true IsLegitimate
 
 rule "r_HasPurpose"
   whenever
@@ -113,5 +121,6 @@ rule "r_HasPurpose"
   refine
     HasPurpose(UseActivity, p)
 
-
+#Whenever the system sees a `Use` event and a `SessionActive` event, it is translated to a `HasPurpose` event in the GDPR sense.
+#Thus gdpr.lex l183: the HasPurpose event exists, so check gdpr.lex l187-189 obligations.
 
