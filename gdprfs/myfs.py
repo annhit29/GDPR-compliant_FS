@@ -5,6 +5,8 @@ from fuse import Fuse
 import fuse
 fuse.fuse_python_api = (0, 2) 
 
+import csv
+from io import StringIO, BytesIO
 from gdprfs.llm import run_llm_analysis_and_update_db
 from gdprfs.settings import INSTRLIB_EXE, INSTRLIB_FORMULA, INSTRLIB_LOG, INSTRLIB_SIG
 from instrlib.instrument import Instrument
@@ -327,7 +329,7 @@ def events_for_read_or_skip(path):
     lower = str(path).lower()
 
     # Skip full-file events for formats with custom enforcement
-    if lower.endswith(".pdf") or lower.endswith(".txt"):
+    if lower.endswith(".pdf") or lower.endswith(".txt") or lower.endswith(".csv") or lower.endswith(".odt"):
         return []  # Use events emitted manually inside read()
 
     return events_for_read(path)
@@ -496,8 +498,6 @@ class MyFS(Fuse):
                 update_file_mapping_for_upper(str(p.resolve()), context="write")
                 update_file_metadata(str(p.resolve()), "write")
                 
-                # print("PRINT A COLLECT in _write")
-                # self._emit_collect_event(path) # solves the issue of no Collect event for direct writes ending with numbers
             except Exception as e:
                 print(f"[DB] Warn: mapping update failed for {p}: {e}")
         else:
@@ -681,15 +681,6 @@ class MyFS(Fuse):
             else:
                 print(f"[lazy DB folder] No matching person for folder '{folder_name}'")
 
-        # No DB Update here, coz directories are not stored in File table! todo: create table for folders or use existing files, only wait for files inside the folder?
-
-        # # Update DB
-        # try:
-        #     update_file_mapping_for_upper(str(p.resolve()), context="mkdir")
-        #     update_file_metadata(str(p.resolve()), "mkdir")
-        # except Exception as e:
-        #     print(f"[DB] Warning: mkdir mapping failed for {p}: {e}")
-
         return 0
 
 
@@ -765,7 +756,6 @@ class MyFS(Fuse):
             update_file_mapping_for_upper(str(p.resolve()), context="open")
             update_file_metadata(str(p.resolve()), "open")
             return 0
-        from errno import ENOENT
         raise OSError(ENOENT, "No such file or directory")
 
     def read(self, path, size, offset, fh=None):
@@ -777,10 +767,9 @@ class MyFS(Fuse):
 
         p = _upper(path)
         if not p.is_file():
-            from errno import ENOENT
             raise OSError(ENOENT, "No such file or directory")
-        
-        # =========== CASE1: pdf with page-based Use event ===========
+    
+        # =========== Case1: pdf with page-based Use event ===========
         if str(p).lower().endswith(".pdf"):
             print("[PDF] Page-based enforcement for PDF read")
 
@@ -792,7 +781,7 @@ class MyFS(Fuse):
 
             return redacted_bytes[offset:offset + size]
 
-        # =========== CASE2: TXT full-file enforcement ===========
+        # =========== Case2: TXT full-file enforcement ===========
         if str(p).lower().endswith(".txt"):
             print("[TXT] Full-file enforcement for TXT read")
 
@@ -831,8 +820,116 @@ class MyFS(Fuse):
 
             return chunk
 
+        # # =========== Case3: ODT paragraph-based enforcement ===========
+        # if str(p).lower().endswith(".odt"):
+        #     print("[ODT] Paragraph-based enforcement for ODT read")
 
-        # =========== CASE3: Fallback case: non-pdf and non-txt files ===========        
+        #     from odf.opendocument import load as load_odt
+        #     from odf.opendocument import OpenDocumentText
+        #     from odf.text import P
+
+        #     # Load original document
+        #     doc = load_odt(str(p))
+        #     paragraphs = doc.getElementsByType(P) # todo: not P mais images, tableaux, alors il faut les ajouter aussi 
+
+        #     # Prepare new redacted document
+        #     new_doc = OpenDocumentText()
+
+        #     fid, _ = _get_file_and_user(_upper(path))
+        #     base_fid = fid or os.path.basename(path)
+
+        #     for idx, para in enumerate(paragraphs):
+        #         text = "".join(
+        #             n.data for n in para.childNodes if hasattr(n, "data")
+        #         ).strip()
+
+        #         # Determine involved UIDs for this paragraph
+        #         uids = []
+        #         for uid_candidate in _uids_from_page_text(text):
+        #             uids.append(uid_candidate)
+
+        #         # If no PII → copy paragraph as-is
+        #         if not uids:
+        #             new_para = P(text=text)
+        #             new_doc.text.addElement(new_para)
+        #             continue
+
+        #         # Build Use events for this paragraph
+        #         para_fid = f"{base_fid}/para-{idx}"
+        #         events = [Event("Use", para_fid, uid) for uid in uids]
+
+        #         cau, sup, _, _ = logger.log(events, threading.Event(), False)
+
+        #         if sup:
+        #             print(f"[ODT] Paragraph {idx} suppressed")
+        #             new_para = P(text="REDACTED")
+        #         else:
+        #             new_para = P(text=text)
+
+        #         new_doc.text.addElement(new_para)
+
+        #     # Serialize the new document into bytes
+        #     from io import BytesIO
+        #     buf = BytesIO()
+        #     new_doc.save(buf)
+        #     redacted_bytes = buf.getvalue()
+
+        #     # Still update DB metadata
+        #     update_file_mapping_for_upper(str(p.resolve()), context="read")
+        #     update_file_metadata(str(p.resolve()), "read")
+
+        #     return redacted_bytes[offset : offset + size]
+
+        # =========== Case4: CSV row-based enforcement ===========
+        # todo: fix the last characters should display
+        if str(p).lower().endswith(".csv"):
+            print("[CSV] Row-based enforcement for CSV read")
+
+            fid, _ = _get_file_and_user(_upper(path))
+            base_fid = fid or os.path.basename(path)
+
+            # Read original CSV as text
+            with open(p, "r", newline="", encoding="utf-8", errors="ignore") as f:
+                reader = list(csv.reader(f))
+
+            output = []
+
+            rows = reader # all rows, including header
+
+            for idx, row in enumerate(rows):
+                row_text = " ".join(row).lower()
+
+                # Detect involved users
+                uids = _uids_from_page_text(row_text)
+
+                if not uids:
+                    output.append(row)
+                    continue
+
+                row_fid = f"{base_fid}/row-{idx}"
+                events = [Event("Use", row_fid, uid) for uid in uids]
+
+                cau, sup, _, _ = logger.log(events, threading.Event(), False)
+
+                if sup:
+                    print(f"[CSV] Row {idx} suppressed")
+                    output.append(["REDACTED"] * len(row))
+                else:
+                    output.append(row)
+
+            # Serialize CSV back to bytes
+            buf = StringIO()
+            writer = csv.writer(buf)
+            writer.writerows(output)
+
+            csv_bytes = buf.getvalue().encode("utf-8")
+
+            update_file_mapping_for_upper(str(p.resolve()), context="read")
+            update_file_metadata(str(p.resolve()), "read")
+
+            return csv_bytes[offset : offset + size]
+
+        # =========== Case5: Fallback case: non-pdf and non-txt files ===========        
         # return only the requested slice, as bytes
         with open(p, "rb") as f: # the file is being read from p i.e. from /upper 
             f.seek(offset)
@@ -920,7 +1017,7 @@ class MyFS(Fuse):
         # After successful save, and after successful rename, re-check mapping for the final file name
         try:
             # Detect gedit/temporary saves: rename from temp → real file
-            if os.path.basename(old).startswith(".goutputstream-") and not _is_temp_name(new):
+            if (os.path.basename(old).startswith(".goutputstream-") or os.path.basename(old).startswith(".~lock.")) and not _is_temp_name(new):
                 context = "write"  # treat this as a real save, not a rename
                 # Update DB for the final file
                 update_file_mapping_for_upper(str(new_p.resolve()), context=context)
@@ -1019,3 +1116,6 @@ if __name__ == "__main__":
     start_consent_poller() # start the consent poller in the background
     start_ingest_server(logger) # start the ingest HTTP server for Consent/Revoke events
     fs.main()               # enter service loop
+
+
+# todo: What if for ODT, I want to include images and tables too? not only texts
