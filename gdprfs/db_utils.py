@@ -40,7 +40,6 @@ print(f"[INIT] Loaded gdprowner rules: {GDPROWNER_RULES}") # [INIT] Loaded gdpro
 #     GDPRIGNORE_PATTERNS = load_gdprignore()
 
 def _is_temp_name(fuse_path: str) -> bool:
-    # print("in _is_temp_name")
     """Detect temporary filenames created by editors (e.g., gedit)."""
     name = os.path.basename(fuse_path)
     return (
@@ -49,7 +48,6 @@ def _is_temp_name(fuse_path: str) -> bool:
         or name.startswith(".#")
         or name.endswith(".swp")
 
-        #todo 10h11: testing
         or name.startswith("~$") # MS Office temporary file
         or name.startswith(".~lock") # LibreOffice lock file
         or name.endswith(".tmp") # generic temp
