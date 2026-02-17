@@ -1,7 +1,7 @@
 StartSession(inUid:string,p:string,reason:string)
 StopSession(inUid:string)
 Use(fid:string, exUid:string)-
-Collect(exUid:string,p:string)
+Collect(fid:string,p:string)
 Delete(fid:string)+
 Consent(exUid:string, p:string)
 Revoke(exUid:string, p:string)
