@@ -24,7 +24,7 @@ suppressable event Use
   fid   : file_id
   exUid : user_id
 
-observable event Write
+suppressable event Write
   fid : file_id
   p     : purpose
 
@@ -78,7 +78,7 @@ rule "r_DataProcessing"
   whenever
     Use(d, ds)
   refine
-    DataProcessing("GDPRFS", "GDPRFS", "Use", d) #l39 #todo: "Use" activity? coz gdpr.lex l42: Data d is processed by processor "GDPRFS" on behalf of controller "GDPRFS" as part of data processing activity "Use"
+    DataProcessing("GDPRFS", "GDPRFS", "Use", d) #l39 #"Use" activity coz gdpr.lex l42: Data d is processed by processor "GDPRFS" on behalf of controller "GDPRFS" as part of data processing activity "Use"
 
 #Use refines to DataProcessing. i.e. Use replaces DataProcessing event.
 #this rule is a translator from the system events of FS (computer) to the GDPR law (juridical). 
@@ -94,7 +94,7 @@ rule "r_HasPurpose" #gdpr.lex l67: Data processing activity a has purpose p
     #a session has started, and not yet stopped. := the same session
     # this session has this event Use.
   refine
-    HasPurpose("Use", p) #todo: "Use" activity? coz gdpr.lex l67: Data processing activity "Use" has purpose p
+    HasPurpose("Use", p) #"Use" activity coz gdpr.lex l67: Data processing activity "Use" has purpose p
 
 # r_HasPurpose is also for art5b rule "purpose_conditions" (l183)
 #because gdpr.lex's rule "purpose_conditions" is triggered by HasPurpose event, i.e.
@@ -121,7 +121,7 @@ rule "r_IsCollection"
     whenever
         Collect(d, ds)
     refine
-        IsCollection("Collect", ds) #todo: "Collect" activity? coz gdpr.lex l63: """Data processing activity Collect collects personal data from data subject {ds}"""
+        IsCollection("Collect", ds) #"Collect" activity coz gdpr.lex l63: """Data processing activity Collect collects personal data from data subject {ds}"""
 # Collect event refines to IsCollection event. i.e. Collect replaces IsCollection event.
 
 #art5b rule "general_purpose"
@@ -132,7 +132,7 @@ assume true IsCompatibleWithPurpose
 assume false IsArchival
   """No archiving purposes in the public interest (eg: long‑term preservation for public‑interest, historical or scientific research) is performed."""
 
-#art5c
+#art5c #todo: pour ces trois predicates: future work: discuter cmt on peut détecter avec LLM
 assume true IsAdequate
   """Data d processed or collected is enough in quantity and quality to fulfil purpose p, but not more than that."""
 
@@ -161,17 +161,20 @@ rule "r_IsUpToDate"
 assume false UndueDataDelay
     """We do not wait to delete data."""
 
-#todo: can I do this? `Rectify(fid, fid)`
+#todo: can I do this? `Rectify(fid, fid)`. Finalement qd je refine rule "rectification_obligation" (art16), il veut que Write soit causable, mais ici: suppressable. Donc pour resoudre le pb: mets Rectify to assume true && Write event reste suppressable: ça compile.
 #Whenever a file fid is written (i.e. updated),
 #the olf data in `fid` is rectified to the new data in `fid`.
 
 #so Every write operation counts as correcting the data.
 
-rule "r_Rectify"
-  whenever
-    Write(fid, p)
-  refine
-    Rectify(fid, fid) #allowed, coz we're updating data in file id, so old_data => fid, old_data => fid ?  
+assume true Rectify
+    """Data is rectified whenever it is written. The old data in the file is rectified to the new data in the file."""
+    
+#rule "r_Rectify"
+#  whenever
+#    Write(fid, p)
+#  refine
+#    Rectify(fid, fid) #allowed, coz we're updating data in file id, so old_data => fid, old_data => fid ?  
 # Write event refines to Rectify event. i.e. Write replaces Rectify event. 
 # coz Writing is considered a correction/rectification.
 
@@ -179,13 +182,12 @@ rule "r_Rectify"
 
 #Data is stored when: it exists on disk, and it has not been deleted.
 # so treat `Write(d,p)` as implying data is stored
-#rule "r_Stored"
-#  whenever
-#    Write(d, p) #todo: error: Write must be sup?! but why this doesn't happen w/ `r_GiveConsent`?
-#    NOT Delete(d) SINCE Write(d, p)
-#  refine
-#    Stored(d)
-assume false Stored
+rule "r_Stored"
+  whenever
+    Write(d, p) #todo: error: Write must be sup?! but why this doesn't happen w/ `r_GiveConsent`?
+    NOT Delete(d) SINCE Write(d, p)
+  refine
+    Stored(d)
 assume true IsNecessary
 
 #art5e rule "storage_limitation_exception"
@@ -242,17 +244,320 @@ rule "r_LegitimateInterest"
   whenever
     Use(d, ds)
     NOT StopSession(inUid) SINCE StartSession(inUid, p, reason)
-    p = "marketing" #todo: assume the legitimate interest to protect the marketing purpose?
-  refine #todo: my interest OK?
-    IsNecessaryForLegitimateInterest("Use", "GDPRFS", "the interests with purpose marketing, service, or analytics, by performing GDPRFS's Read operations.")
+    p = "service"
+  refine
+    IsNecessaryForLegitimateInterest("Use", "GDPRFS", "Providing the service and performing the filesystem's normal operations.")
 
-#todo: seems to be correct?
 rule "r_IsOverriddenByDataSubjectInterests"
     whenever
         Use(d, ds) OR Write(d, p)
-        NOT (p = "marketing")
+        NOT (p = "service")
     refine
         IsOverriddenByDataSubjectInterests("GDPRFS", "ds's interests", ds)
 
 #art6.2
 #already done previously.
+
+#art9
+#para1
+assume false IsSpecialData #todo: what about medical certificate? this is health data, but sensitive enough?
+    """This FileSystem does not process sensitive personal data (eg: political opinions, religious beliefs, sexual orientation, etc.)."""
+#todo: LLM: flag <- detecte dans les fichiers si une des special data presente
+
+#para2a
+assume false GiveSpecialConsent
+  """todo: implement LLM then maybe give extra param for Consent event indicating special?"""
+
+#para2b
+assume false IsNecessaryForEmploymentLaw
+    """We do not consider this legal basis."""
+
+#para2c
+assume false IsUnableToConsent
+    """Users (data subjects) can explicitly give consent, so is able to consent."""
+
+#para2d
+#The file system has safeguards (stripping data of a file) to protect the fundamental rights and interests of data subjects.
+#safeguard in this FS := If ds doesn’t consent, and file contains multiple data subjects including this ds', Then strip data of the one who hasn't consented yet.
+
+#Whenever we process data of ds AND ds has consented and hasn't revoked consent,,
+# hen safeguards are in place.
+rule "r_Safeguards"
+  whenever
+    Use(d, ds)
+    NOT Revoke(ds, p) SINCE Consent(ds, p)
+  refine
+    ImplementFundamentalRightsSafeguards("Use", ds)
+
+# legitimate activities := normal operations directly tied to the organisation's political, philosophical, religious, or trade union aims
+#todo: ig it's sensitive, dealing w/ LLM?
+assume false IsLegitimateActivity
+    """We never claim a legitimate activity with respect to a controller with a political, philosophical, religious, or trade union aim."""
+
+assume false HasRegularContact
+    """We do not have regular contact with data subjects in relation to our legitimate activities."""
+
+assume false IsNonProfit
+    """No non-profit controller is involved."""
+
+assume false HasPoliticalAim
+    """No controller has a political aim."""
+
+assume false HasPhilosophicalAim
+    """No controller has a philosophical aim."""
+
+assume false HasReligiousAim
+    """No controller has a religious aim."""
+
+assume false HasTradeUnionAim
+    """No controller has a trade union aim."""
+
+assume false IsMember
+    """No membership of a political party, a philosophical organization, a religious organization or a trade union."""
+
+assume false IsOutsideDisclosure
+    """We do not share or transmit data to entities or people outside the controller GDPRFS's organisation without the data subject's consent."""
+
+#para2e
+assume false MakePublic
+    """We never assume that a data subject makes their data public."""
+
+#para2f
+assume false IsNecessaryForJudicialClaims
+    """processing activity is not necessarily required for legal proceedings, court cases, or judicial functions."""
+
+#para2g
+assume false IsNecessaryForSubstantialPublicInterest
+    """processing activity is not necessarily required for reasons of substantial public interest, on the basis of Union or Member State law."""
+
+#para2h
+assume false IsNecessaryForSpecialMedicalReasons
+    """processing activity is not necessarily required for the purposes of preventive or occupational medicine, 
+       for the assessment of the working capacity of the employee, medical diagnosis, the provision
+       of health or social care or treatment or the management of health or social care systems and 
+       services on the basis of Union or Member State law or pursuant to contract with a health professional."""
+
+#para2i
+assume false IsHealthRelated
+    """Public interest pi is not specifically related to the public health protection, and is not necessarily backed by EU or Member State law that mandates professional secrecy and data subject safeguards."""
+
+#para2j
+assume false IsNecessaryForArchivalPurposes
+    """No archiving is performed."""
+
+#para3
+assume false IsSubjectToProfessionalSecrecy
+    """No entity is subject to the obligation of professional secrecy."""
+
+#art15
+#para1
+
+rule "r_IsAccessRequest"
+  whenever
+    RequestAccess(ds)
+  refine
+    Request(ds, "access", "GDPRFS")
+    IsAccessRequest("access")
+
+assume true RequestResponse
+    """Controller GDPRFS responds to data subject's access request with a response that contains the requested information."""
+
+assume true Contains
+    """The response to data subject's access request contains the requested information."""
+
+assume true IsDataProcessingOngoing
+    """IsDataProcessingOngoing is a causable event"""
+
+assume true IsDataProcessingNotOngoing
+    """IsDataProcessingNotOngoing is a causable event"""
+
+assume true IsPurposeOfProcessing
+    """IsPurposeOfProcessing is a causable event"""
+
+#rule "r_CategoryIdentity"
+#  whenever
+#    Collect(d, ds)
+#    d = "name.txt" OR d = "id.txt"
+#  refine
+#    HasCategory(d, "identity")
+
+#rule "r_CategoryContact"
+#  whenever
+#    Collect(d, ds)
+#    d = "email.txt"
+#  refine
+#    HasCategory(d, "contact")
+
+#rule "r_CategoryHealth"
+#  whenever
+#    Collect(d, ds)
+#    d = "health.txt"
+#  refine
+#    HasCategory(d, "health")
+
+assume true HasCategory #todo: like this ok?
+    """Data belongs to a category (eg: identity, contact, health, etc.) whenever it is collected or written."""
+
+#todo: declaration? j'en ai pas dans l'instrumentation?
+assume true IsCategory
+    """data belongs to a category (eg: identity, contact, health, etc.) whenever it is collected or written."""
+
+assume false HasIntendedRecipient
+    """todo: no recipient??, sinon cf en bas"""
+#rule "r_HasIntendedRecipient"
+#  whenever
+#    Collect(d, ds)
+#    NOT StopSession(inUid) SINCE StartSession(inUid, p, reason)
+#  refine
+#    HasIntendedRecipient(d, "GDPRFS")
+
+# a declaration := a formal statement included in the controller’s response to a request.
+assume true IsRecipient
+    """IsRecipient is a causable event. The declaration always declares the intended recipient of the data."""
+
+assume false HasIntendedRecipientCategory
+    """no recipient category"""
+
+assume true IsRecipientCategory
+    """IsRecipientCategory is a causable event. The declaration always declares the category of the intended recipient of the data."""
+
+assume false HasStoragePeriod
+    """No storage period is defined. Data is kept until users request to erase their data (RequestErasure)."""
+
+assume true IsStoragePeriod
+    """IsStoragePeriod is a causable event. The declaration always declares the storage period of the data."""
+
+rule "r_HasStorageCriteria"
+    whenever
+        true
+    refine
+        HasStorageCriteria(d, "Data is stored until the user requests to erase their data (RequestErasure).")
+
+assume true IsStorageCriteria
+    """IsStorageCriteria is a causable event. The declaration always declares the storage criteria of the data."""
+
+#art15.e
+assume true IsRights
+    """IsRights is a causable event."""
+
+#art15.f
+assume true IsComplaintStatement
+    """IsComplaintStatement is a causable event. The declaration always declares the statement of the data subject's right to lodge a complaint with a supervisory authority regarding the access request."""
+
+assume false IsReception
+    """We do not receive data from other entities."""
+
+assume true IsReceptionSource
+    """Irrelevant since we never receive data from other sources."""
+
+assume true IsDSSource
+    """The dsta subject source is declared in the response to data subject's access request, if applicable."""
+
+#art15.h
+rule "r_HasIntendedAutomatedDecision"
+    whenever
+        Collect(d, ds)
+    refine
+        HasIntendedAutomatedDecision(d, "We use user data to have personalized advertisement to them.")
+
+assume true IsAutomatedDecision
+    """IsAutomatedDecision is a causable event."""
+
+#para2
+assume false HasIntendedTransfer
+    """We do not transfer data to other entities."""
+
+assume true IsTransfer
+    """Irrelevant since no transfers are taking place."""
+
+assume true IsTransferBasis
+    """Irrelevant since no transfers are taking place."""
+
+#para3
+assume true ContainsData
+    """Declaration contains data file."""
+
+assume true PersonalDataCopy
+    """PersonalDataCopy is a causable event."""
+
+assume true IsCommonlyUsedFormat
+    """We use structured file formats (txt, pdf, odt)."""
+
+assume false IsFurtherCopy
+    """No request is considered a further copy request."""
+
+assume true IsPurposeOfProcessing
+    """The declaration always declares the purpose of processing."""
+
+#art15 linked to art12 
+#art12 have art7's events
+assume true IsEasilyAccessible
+    """The text of all declarations is contained in this refinement file. They are easily accessible."""
+
+assume true IsIntelligible
+    """The text of all declarations is contained in this refinement file. They are intelligible."""
+
+assume true IsClearAndPlainLanguage
+    """The text of all declarations is contained in this refinement file. They use clear and plain language."""
+
+assume true Inform
+    """Inform is a causable event. The controller always informs the data subject about the declaration."""
+
+#art12
+assume false ChargeForRequest
+    """We are never charging users for requests."""
+
+assume true IsConcise
+    """The text of all declarations is contained in this refinement file. They are concise."""
+
+assume true IsElectronicDeclaration
+    """All declarations are electronic."""
+    
+assume true IsElectronicRequest
+    """All requests are electronic."""
+
+assume false IsExtensionNecessary
+    """We never claim that we need a time extension to process user requests."""
+
+assume false IsImpossibleElectronic
+    """All requests are electronic."""
+
+assume true IsReasonForRequestExtension
+    """Irrelevant since we never extend requests."""
+    
+assume true IsReasonForRequestRefusal
+    """Irrelevant since we never refuse requests."""
+
+assume false IsReasonableFee
+    """We generally do not impose fees."""
+
+assume true IsTransparentDeclaration
+    """The text of all declarations is contained in this refinement file. They are transparent."""
+
+assume false IsUnfoundedOrExcessive
+    """We never qualify user requests as unfounded or excessive."""
+
+assume false RefuseRequest
+    """We never refuse requests."""
+
+assume false RequestExtension
+    """We never request an extension."""
+
+assume false RequestsNonElectronic
+    """All requests are electronic."""
+
+assume false UndueDelay
+    """We do not wait to inform users."""
+
+#art16
+assume false HasInaccuracy
+    """We do not have any inaccurate data."""
+
+#Whenever the system writes (updates) data d,
+#we consider that a rectification request was made
+#asking to rectify data d into d.
+rule "r_RectificationRequest"
+  whenever
+    Write(d, p)
+  refine
+    IsRectificationRequest("rectify", d, d)
