@@ -13,7 +13,7 @@ logs/
 .vscode
 
 gdprfs.db
-gdprfs/gdprfstrace.log
+gdprfs/*.log
 external_consent_platform/instance/external_consent_platform.db
 instance/external_consent_platform.db
 internal_purpose_platform/instance/internal_purpose_platform.db
