@@ -490,7 +490,7 @@ assume true IsPurposeOfProcessing
     """The declaration always declares the purpose of processing."""
 
 #art15 linked to art12 
-#art12 have art7's events
+#art12 has art7's events
 assume true IsEasilyAccessible
     """The text of all declarations is contained in this refinement file. They are easily accessible."""
 
@@ -561,3 +561,70 @@ rule "r_RectificationRequest"
     Write(d, p)
   refine
     IsRectificationRequest("rectify", d, d)
+
+#todo: supprimer <- data processing = Write event included too
+
+#art17
+rule "r_ErasureRequest"
+  whenever
+    Delete(d)
+  refine
+    IsErasureRequest("erasure", d)
+
+rule "r_WithdrawConsent"
+  whenever
+    Revoke(ds, p)
+  refine
+    WithdrawConsent(ds, p, "GDPRFS")
+
+assume false DataReview
+    """We do not have a data review process in place, but we do have a data deletion process in place (Delete event)."""
+
+assume false Share
+    """We do not share data with other entities."""
+
+assume true NotifyOfErasure
+    """NotifyOfErasure is a causable event. The controller always notifies the data subject of the erasure of their data."""
+
+assume false IsNecessaryForFreedomOfExpression
+    """We do not consider this legal basis."""
+
+#art30
+#todo: how to refine Record event?
+
+assume false IsJointController
+    """There are no joint controllers."""
+
+assume false IsControllerRepresentative
+    """We do not need controller representatives since all controllers considered are based in the Union."""
+
+assume false Transfer
+    """No activities that involve a transfer are taking place."""
+
+rule "r_IsDataProcessingOfficer"
+    whenever
+        c = "GDPRFS"
+        c' = "dpo@gdprfs.com"
+    refine
+        IsDataProtectionOfficer(c, c')
+
+assume false HasDataSubjectCategory
+    """No activities are specific to a particular data subject category."""
+
+assume true HasSecurityMeasuresDeclaration
+    """The declaration always contains the security measures implemented to protect data."""
+
+rule "r_IsSME"
+    whenever
+        true
+    refine
+        IsSME("GDPRFS")
+
+assume false IsRiskyProcessing
+    """None of the activities performed is likely to result to a high risk to the rights and freedoms of individual persons."""
+
+assume false IsOccasionalProcessing
+    """All processing is habitual, not occasional."""
+
+assume false RelatesToCriminalConvictionsOrOffences
+    """We do not process data relating to criminal convictions and offences or related security measures."""
