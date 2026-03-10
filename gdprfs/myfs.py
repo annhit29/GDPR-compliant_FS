@@ -185,9 +185,6 @@ def _get_file_and_user(path: str):
         
         uids = []
         for person in file_obj.people:
-            # print(f"[DEBUG] Linked Person: uid={person.uid}, first={person.first_name}, last={person.last_name}")
-            # if person and person.uid: # if person exists and has a uid
-            #     uids.append(person.uid)
             if person.uid:
                 uids.append(person.uid)
             else:
@@ -197,7 +194,6 @@ def _get_file_and_user(path: str):
                 uid = first[:1] + last if first or last else "anonymous"
                 uids.append(uid)
 
-        # print(f"[DEBUG] Returning from _get_file_and_user: fid={file_obj.file_id}, uids={uids}")
         return file_obj.file_id, uids
 
 
@@ -912,7 +908,6 @@ class MyFS(Fuse):
         # return only the requested slice, as bytes
         with open(p, "rb") as f: # the file is being read from p i.e. from /upper 
             f.seek(offset)
-            # print(f"size: {size}")
             data = f.read(size)
 
         print(f"[READ] path={path} reading from {p}, {len(data)} bytes, size={size}, offset={offset}, returning={data}")
@@ -927,7 +922,6 @@ class MyFS(Fuse):
         """Create a new empty file in /upper and sync to /mirror."""
         p = _upper(path)
         _ensure_parent(p)
-        # print(f"[CREATE] Creating new file {p}")
 
         # Create file in upper layer
         # I opened the file, now it exists, even if I didn’t write on it yet.
@@ -956,11 +950,8 @@ class MyFS(Fuse):
         Rename a file or directory from 'old' → 'new'
         Both in /upper and in /mirror
         """
-        # print("I'm in the rename function")
-        # print(f"[DEBUG rename] called with old={old}, new={new}", flush=True)
         old_p = _upper(old)
         new_p = _upper(new)
-        # print(f"[RENAME] {old_p} → {new_p}")
 
         if not old_p.exists():
             from errno import ENOENT
