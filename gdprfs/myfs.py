@@ -228,13 +228,24 @@ def events_for_read(path):
     if base.startswith(".goutputstream-"):
         return []  # No event, coz final Write will be emitted at rename()
 
+    # Sanitize LibreOffice lock files: .~lock.fhublet.csv# → fhublet.csv
+    real_base = base
+    if base.startswith(".~lock.") and base.endswith("#"):
+        real_base = base[len(".~lock."):-len("#")]
+
+    # For lock files, look up the real file instead
+    lookup_path = _upper(path)
+    if real_base != base:
+        lookup_path = _upper(path).parent / real_base
+
     # Case 2: normal file read → Use(fid, purpose, uid)
-    fid, uids = _get_file_and_user(_upper(path))
-    fid = fid or f"unknown-{base}"
+    fid, uids = _get_file_and_user(lookup_path)
+    fid = fid or real_base
+    print("fid line244 is: ", fid)
 
     events = []
     with Session() as session:
-        file_obj = session.query(File).filter(File.abs_path == str(_upper(path).resolve())).first()
+        file_obj = session.query(File).filter(File.abs_path == str(lookup_path.resolve())).first()
 
         # Case 1: No personal data linked → free access, but still log as "nonpersonal"
         if not file_obj or not file_obj.people:
