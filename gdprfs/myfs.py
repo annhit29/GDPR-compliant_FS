@@ -969,8 +969,8 @@ class MyFS(Fuse):
             raise OSError(ENOENT, f"No such file: {old}")
 
         # ---------- GDPR ENFORCEMENT FOR FINAL SAVE ----------
-        # gedit pattern: .goutputstream-XXXX  -> real filename
-        if os.path.basename(old).startswith(".goutputstream-") and not _is_temp_name(new):
+        # temp → real file pattern (gedit .goutputstream-*, LibreOffice .tmp, etc.)
+        if _is_temp_name(old) and not _is_temp_name(new):
             # Ask: is Use(fid, uid) allowed for this final file?
             events = events_for_read(new)
             cau_flag, sup_flag, _, _ = logger.log(events, threading.Event(), False)
@@ -996,7 +996,7 @@ class MyFS(Fuse):
         # After successful save, and after successful rename, re-check mapping for the final file name
         try:
             # Detect gedit/temporary saves: rename from temp → real file
-            if (os.path.basename(old).startswith(".goutputstream-") or os.path.basename(old).startswith(".~lock.")) and not _is_temp_name(new):
+            if _is_temp_name(old) and not _is_temp_name(new):
                 context = "write"  # treat this as a real save, not a rename
                 # Update DB for the final file
                 update_file_mapping_for_upper(str(new_p.resolve()), context=context)
