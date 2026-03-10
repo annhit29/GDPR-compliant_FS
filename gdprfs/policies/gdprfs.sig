@@ -1,9 +1,11 @@
 Collect(fid: string, exUid: string)
 Consent(exUid: string, p: string)
+Contains(de: string, de2: string)+
 Delete(d: string)+
-Record(pr: string, c: string, a: string, p: string, v: string)+
+IsCategory(de: string, cat: string)+
 RequestAccess(exUid: string)
 RequestErasure(exUid: string)
+RequestResponse(ds: string, rq: string, rs: string)+
 Revoke(exUid: string, p: string)
 StartSession(inUid: string, p: string, reason: string)
 StopSession(inUid: string)
@@ -13,7 +15,7 @@ UseNonPII(fid: string, exUid: string)
 Write(fid: string, p: string)-
 fun string_of_category(cat: string) : string
 fun string_of_country_io(co: int) : string
-fun string_of_declaration(de: int) : string
+fun string_of_declaration(de: string) : string
 fun string_of_entity(c: string) : string
 fun string_of_purpose(p: string) : string
 fun string_of_safeguards(sg: int) : string

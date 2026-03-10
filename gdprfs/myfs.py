@@ -29,6 +29,7 @@ from errno import ENOENT
 
 PDF_CACHE = {}
 REDACTED_TEMPLATE = Path("/var/lib/gdprfs/redacted_template.pdf")
+_current_session_purpose = "marketing"  # updated by StartSession/StopSession
 # todo: 0) d'autres formats de fichiers <- redacted qd lecture mm pour les txt (suppression handler)
 # 3) declarer manuellement le PII (dans le internal interface, par l'utilisateur interne) <- inspiration: .gitignore
 
@@ -203,20 +204,20 @@ def _get_file_and_user(path: str):
 def events_for_path(path: str, event_type: str):
     """
     Return a list of Event objects (possibly multiple if file has several owners).
-    event_type ∈ {'Use', 'Collect', 'Delete'}
+    event_type ∈ {'Use', 'Write', 'Delete'}
     """
     fid, uid = _get_file_and_user(_upper(path))
     # Skip temporary names
     if _is_temp_name(path):
-        return [Event('Collect', 'tempfile', 'marketing')]
+        return [Event('Write', 'tempfile', _current_session_purpose)]
     if not fid:
         fid = f"unknown-{os.path.basename(path)}"
     if not uid:
         uid = "anonymous"
     if event_type == 'Use':
         return [Event('Use', fid, uid)]
-    elif event_type == 'Collect':
-        return [Event('Collect', fid, 'marketing')]
+    elif event_type == 'Write':
+        return [Event('Write', fid, _current_session_purpose)]
     elif event_type == 'Delete':
         return [Event('Delete', fid)]
     else:
@@ -227,13 +228,9 @@ def events_for_read(path):
     """Return appropriate events for read(), skip .goutputstream temporary files."""
     base = os.path.basename(path)
 
-    # if _should_ignore():
-    #     print(f"[DEBUG] Ignoring read from system process for {base}")
-    #     return []
     # Case 1: temporary gedit files (.goutputstream-XXXX)
     if base.startswith(".goutputstream-"):
-        # print(f"[DEBUG] Skipping Collect for temporary file: {path}")
-        return []  # No event, coz final Collect will be emitted at rename()
+        return []  # No event, coz final Write will be emitted at rename()
 
     # Case 2: normal file read → Use(fid, purpose, uid)
     fid, uids = _get_file_and_user(_upper(path))
@@ -242,8 +239,6 @@ def events_for_read(path):
     events = []
     with Session() as session:
         file_obj = session.query(File).filter(File.abs_path == str(_upper(path).resolve())).first()
-        # print(f'{file_obj=}')
-        # print(f'{file_obj.people=}')
 
         # Case 1: No personal data linked → free access, but still log as "nonpersonal"
         if not file_obj or not file_obj.people:
@@ -272,8 +267,9 @@ def events_for_read(path):
 schema = Schema()
 schema.add("UseNonPII", [str, str]) # for reads of non-PII files
 schema.add('Use', [str, str]) # for reads
+schema.add('Write', [str, str]) # for writes
 schema.add('Delete', [str])    # for deletes
-schema.add('Collect', [str, str]) # for writes
+schema.add('Collect', [str, str]) # for collection events
 
 schema.add('StartSession', [str, str, str])
 schema.add('StopSession', [str])
@@ -283,6 +279,8 @@ schema.add('Revoke', [str, str]) # for revoke consent events
 schema.add('RequestAccess', [str]) # request all DS data events from the FS
 schema.add('RequestErasure', [str]) # request erasure of all DS data events in the FS
 
+schema.add('RequestResponse', [str, str, str])
+schema.add('Contains', [str, str])
 
 
 # ========== HANDLERS ==========
@@ -294,34 +292,25 @@ def none_handler(event_name, event_args, response, *args, **kwargs):
     """
     return None
 
-suppression_handlers = {('Use'): none_handler}
-
-causation_handlers = {('UseNonPII'): none_handler,
-                        ('Delete'): none_handler,
-                        ('Collect'): none_handler,
-                      ('Consent'): none_handler,
-                        ('Revoke'): none_handler,
-                        ('RequestAccess'): none_handler,
-                        ('RequestErasure'): none_handler
-                      }
+suppression_handlers = {('Use'): none_handler, ('Write'): none_handler}
+causation_handlers = {
+    ('Delete'): none_handler,
+    ('RequestResponse'): none_handler,  # enforcer handles Art 15 response
+    ('Contains'): none_handler          # enforcer handles response content
+}
 
 # ========== MAPPINGS ==========
 def read_mapping(action):  
     print(f'[read_mapping DEBUG] {str(action)}')
     return Event('Use', str(action), 'userid1')
-# todo: or the following?
-# def read_mapping(action):
-    # print("[DEBUG InstrumentationMapping] remapping event", action)
-    # return Event('Use', str(action), 'analytics')  # different purpose!
 
-def write_mapping(action): return Event('Collect', str(action), 'marketing')
+def write_mapping(action): return Event('Write', str(action), _current_session_purpose)
 def unlink_mapping(action): return Event('Delete', str(action))
 
 instrumentation_mapping = InstrumentationMapping({
     'read': read_mapping,
     'write': write_mapping,
     'unlink': unlink_mapping
-    # 'Use': lambda x:x
 })
 
 # ========== PEP ==========
@@ -334,28 +323,17 @@ def events_for_read_or_skip(path):
 
     return events_for_read(path)
 
-# def events_for_read_or_skip(path):
-#     # If normal files => keep old behavior
-#     if not str(path).lower().endswith(".pdf"):
-#         return events_for_read(path)
-#     # If PDF => skip full-file Use events
-#     return []
-
 pep = PEP(
     mapping={
         ('MyFS', 'read'): Functional('Use', lambda path, *a, **kw: events_for_read_or_skip(path)),
-        ('MyFS', 'write'): Functional('Collect', lambda path, *a, **kw: events_for_path(path, 'Collect')),
-        # ('MyFS', 'unlink'): Functional('Delete', lambda path, *a, **kw: events_for_path(path, 'Delete')),
+        ('MyFS', 'write'): Functional('Write', lambda path, *a, **kw: events_for_path(path, 'Write')),
     },
     suppression_handlers=suppression_handlers,
     causation_handlers=causation_handlers#,
-    # instrumentation_mapping=instrumentation_mapping
-    # todo: francois said use suppression_handlers, causation_handlers, and instrumentation_mapping, then no need mapping?? see miniTwitter_rv/twitt/enforcer.py
 )
 
 pdp = EnfGuard(INSTRLIB_EXE, INSTRLIB_SIG, INSTRLIB_FORMULA, log_file=INSTRLIB_LOG)
 
-# logger = Logger(name="gdprfs")
 logger = Logger(pep, schema, pdp)
 print("PEP mapping keys:", list(logger.pep.mapping.keys()))
 
@@ -371,6 +349,7 @@ import json
 def start_ingest_server(logger):
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
+            global _current_session_purpose
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
@@ -393,10 +372,12 @@ def start_ingest_server(logger):
                         if not purpose or not reason:
                             self.send_error(400, "missing purpose or reason for StartSession")
                             return
+                        _current_session_purpose = purpose
                         evt = Event("StartSession", uid, purpose, reason)
 
                     # CASE 2: StopSession(uid)
                     elif kind == "StopSession":
+                        _current_session_purpose = "marketing"
                         evt = Event("StopSession", uid)
 
                     # CASE 3: Consent/Revoke or others (already handled)
@@ -519,16 +500,16 @@ class MyFS(Fuse):
 
         return len(data) # Returning len(data) tells FUSE “OK, I wrote everything.”
 
-    def _emit_collect_event(self, path: str):
-        """Emit a GDPR Collect event for a file when a write happens but no Collect event is triggered."""
+    def _emit_write_event(self, path: str):
+        """Emit a GDPR Write event for a file when a write happens but no Write event is triggered."""
         try:
             fid, _ = _get_file_and_user(_upper(path))
             fid = fid or f"unknown-{os.path.basename(path)}"
-            evt = Event('Collect', fid, 'marketing')
+            evt = Event('Write', fid, _current_session_purpose)
             logger.log([evt], threading.Event(), False)
-            print(f"[GDPR] Fallback Collect event emitted for {path}")
+            print(f"[GDPR] Fallback Write event emitted for {path}")
         except Exception as e:
-            print(f"[GDPR] Warning: failed to emit Collect event for {path}: {e}")
+            print(f"[GDPR] Warning: failed to emit Write event for {path}: {e}")
 
     def _make_redacted_page(self):
         """
@@ -615,7 +596,6 @@ class MyFS(Fuse):
         (e.g. size, permissions, owner, timestamps)
         Called whenever Linux does 'ls', 'stat', etc.
         """
-        # print(f"[DEBUG getattr] called with path={path}", flush=True)
 
         # Find the real file inside /upper
         real_path = _upper(path)
@@ -747,7 +727,6 @@ class MyFS(Fuse):
         print("in open")
 
         # allow access if the path exists in /upper
-        # print(f"[DEBUG open] called with path={path}, flags={flags}", flush=True)
         p = _upper(path)
         if p.exists():
             # PDF cache invalidation
@@ -1012,8 +991,6 @@ class MyFS(Fuse):
             _ensure_parent(new_m)
             os.rename(old_m, new_m)
 
-        # print(f"[RENAME] Synced {old_p} → {new_p} and {old_m} → {new_m}")
-
         # After successful save, and after successful rename, re-check mapping for the final file name
         try:
             # Detect gedit/temporary saves: rename from temp → real file
@@ -1024,9 +1001,9 @@ class MyFS(Fuse):
                 update_file_metadata(str(new_p.resolve()), context)
                 # print(f"[DB] Updated mapping for final save {new}")
 
-                # Emit the GDPR Collect event for the real file
-                self._emit_collect_event(new)
-                print(f"[GDPR] Sent Collect event for final file {new} via Logger.log()")
+                # Emit the GDPR Write event for the real file
+                self._emit_write_event(new)
+                print(f"[GDPR] Sent Write event for final file {new} via Logger.log()")
 
             else:
                 context = "rename"
