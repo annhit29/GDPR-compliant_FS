@@ -323,9 +323,14 @@ instrumentation_mapping = InstrumentationMapping({
 # ========== PEP ==========
 def events_for_read_or_skip(path):
     lower = str(path).lower()
+    base = os.path.basename(lower)
+
+    # Sanitize lock file name: .~lock.fhublet.csv# → fhublet.csv
+    if base.startswith(".~lock.") and base.endswith("#"):
+        base = base[len(".~lock."):-len("#")]
 
     # Skip full-file events for formats with custom enforcement
-    if lower.endswith(".pdf") or lower.endswith(".txt") or lower.endswith(".csv") or lower.endswith(".odt"):
+    if base.endswith(".pdf") or base.endswith(".txt") or base.endswith(".csv") or base.endswith(".odt"):
         return []  # Use events emitted manually inside read()
 
     return events_for_read(path)
@@ -871,7 +876,7 @@ class MyFS(Fuse):
         if str(p).lower().endswith(".csv"):
             print("[CSV] Row-based enforcement for CSV read")
 
-            fid, _ = _get_file_and_user(_upper(path))
+            fid, file_level_uids = _get_file_and_user(_upper(path))
             base_fid = fid or os.path.basename(path)
 
             # Read original CSV as text
@@ -883,17 +888,13 @@ class MyFS(Fuse):
             rows = reader # all rows, including header
 
             for idx, row in enumerate(rows):
-                row_text = " ".join(row).lower()
-
-                # Detect involved users
-                uids = _uids_from_page_text(row_text)
-
-                if not uids:
-                    output.append(row)
+                # Use file-level person mapping for enforcement
+                if not file_level_uids:
+                    output.append(row)  # no owner → no enforcement needed
                     continue
 
                 row_fid = f"{base_fid}/row-{idx}"
-                events = [Event("Use", row_fid, uid) for uid in uids]
+                events = [Event("Use", row_fid, uid) for uid in file_level_uids]
 
                 cau, sup, _, _ = logger.log(events, threading.Event(), False)
 
