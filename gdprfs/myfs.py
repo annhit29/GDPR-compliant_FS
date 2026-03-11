@@ -31,6 +31,7 @@ from errno import ENOENT
 PDF_CACHE = {}
 REDACTED_TEMPLATE = Path("/var/lib/gdprfs/redacted_template.pdf")
 _current_session_purpose = "marketing"  # updated by StartSession/StopSession
+_save_in_progress_dirs = set()  # directories where a temp→real save is in progress
 # todo: 0) d'autres formats de fichiers <- redacted qd lecture mm pour les txt (suppression handler)
 # 3) declarer manuellement le PII (dans le internal interface, par l'utilisateur interne) <- inspiration: .gitignore
 
@@ -903,6 +904,9 @@ class MyFS(Fuse):
             # Pre-check: if any file-level uid has revoked consent, redact all rows without logging
             all_consented = all(_check_consent(uid, _current_session_purpose) for uid in file_level_uids) if file_level_uids else True
 
+            # Skip per-row Use events if a save is in progress (read during save workflow)
+            save_in_progress = os.path.dirname(path) in _save_in_progress_dirs
+
             for idx, row in enumerate(rows):
                 # Use file-level person mapping for enforcement
                 if not file_level_uids:
@@ -914,6 +918,11 @@ class MyFS(Fuse):
                     output.append(["REDACTED"] * len(row))
                     continue
 
+                if save_in_progress:
+                    output.append(row)  # no Use event during save workflow
+                    continue
+
+                # Normal read (viewing): emit per-row Use events
                 row_fid = f"{base_fid}/row-{idx}"
                 events = [Event("Use", row_fid, uid) for uid in file_level_uids]
 
@@ -964,6 +973,11 @@ class MyFS(Fuse):
         # Sync to mirror
         _sync_to_mirror(path)
         print(f"[CREATE] Synced {p} → mirror")
+
+        # Track save-in-progress for temp files
+        if _is_temp_name(path):
+            _save_in_progress_dirs.add(os.path.dirname(path))
+
         # Update DB mapping and metadata
         try:
             if not _is_temp_name(path):
@@ -1024,6 +1038,9 @@ class MyFS(Fuse):
                 # Emit the GDPR Write event for the real file
                 self._emit_write_event(new)
                 print(f"[GDPR] Sent Write event for final file {new} via Logger.log()")
+
+                # Clear save-in-progress flag
+                _save_in_progress_dirs.discard(os.path.dirname(new))
 
             else:
                 context = "rename"
