@@ -1,3 +1,4 @@
+import requests
 from errno import EACCES
 import getpass
 import threading
@@ -94,11 +95,19 @@ def _delete_from_mirror(fuse_path: str):
     if dst.exists():
         dst.unlink()
 
+def _check_consent(uid: str, purpose: str) -> bool:
+    """Return True if uid has active consent for purpose, False if revoked."""
+    try:
+        res = requests.get(f"http://127.0.0.1:5000/api/consents/{uid}/{purpose}", timeout=1)
+        data = res.json()
+        return data.get("status") == "consented"
+    except Exception:
+        return True  # fail-open: assume consent if platform unreachable
+
 def replay_from_consent_db(logger):
     """
     On startup, all active events are re-injected into the enforcer, so that the enforcer has the latest event states.
     """
-    import requests
     BASE_URL = "http://127.0.0.1:5000"
     CONFIG_PATH = "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform/event_config.yaml"
 
@@ -887,10 +896,18 @@ class MyFS(Fuse):
 
             rows = reader # all rows, including header
 
+            # Pre-check: if any file-level uid has revoked consent, redact all rows without logging
+            all_consented = all(_check_consent(uid, _current_session_purpose) for uid in file_level_uids) if file_level_uids else True
+
             for idx, row in enumerate(rows):
                 # Use file-level person mapping for enforcement
                 if not file_level_uids:
                     output.append(row)  # no owner → no enforcement needed
+                    continue
+
+                if not all_consented:
+                    print(f"[CSV] Row {idx}: consent revoked — redacting without logging")
+                    output.append(["REDACTED"] * len(row))
                     continue
 
                 row_fid = f"{base_fid}/row-{idx}"
