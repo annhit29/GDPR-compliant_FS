@@ -334,6 +334,10 @@ def events_for_read_or_skip(path):
     lower = str(path).lower()
     base = os.path.basename(lower)
 
+    # Skip temp files entirely (e.g. LibreOffice lu*.tmp)
+    if _is_temp_name(base):
+        return []
+
     # Sanitize lock file name: .~lock.fhublet.csv# → fhublet.csv
     if base.startswith(".~lock.") and base.endswith("#"):
         base = base[len(".~lock."):-len("#")]
@@ -989,14 +993,10 @@ class MyFS(Fuse):
         # ---------- GDPR ENFORCEMENT FOR FINAL SAVE ----------
         # temp → real file pattern (gedit .goutputstream-*, LibreOffice .tmp, etc.)
         if _is_temp_name(old) and not _is_temp_name(new):
-            # Ask: is Use(fid, uid) allowed for this final file?
-            events = events_for_read(new)
-            cau_flag, sup_flag, _, _ = logger.log(events, threading.Event(), False)
-            print(f"[GDPR] rename check for {new}: cau_flag={cau_flag}, sup_flag={sup_flag}")
-
-            if sup_flag:
+            _, uids = _get_file_and_user(_upper(new))
+            all_consented = all(_check_consent(uid, _current_session_purpose) for uid in uids) if uids else True
+            if not all_consented:
                 print(f"[GDPR] Blocking final save for {new} due to missing consent")
-                # IMPORTANT: do NOT rename on disk, just fail
                 raise OSError(EACCES, "GDPR policy: write requires external consent")
         # ------------------------------------------------------
 
