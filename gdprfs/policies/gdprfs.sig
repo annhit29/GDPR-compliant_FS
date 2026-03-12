@@ -3,6 +3,7 @@ Consent(exUid: string, p: string)
 Contains(de: string, de2: string)+
 Delete(d: string)+
 IsCategory(de: string, cat: string)+
+Record(pr: string, c: string, a: string, p: string, v: string)+
 RequestAccess(exUid: string)
 RequestErasure(exUid: string)
 RequestResponse(ds: string, rq: string, rs: string)+

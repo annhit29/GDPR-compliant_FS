@@ -5,6 +5,8 @@ type user_id  is string
 type file_id  is string
 #for the GDPR rules (gdpr.lex) art5
 type activity_id is string
+type decl_id     is string
+type request_id  is string
 
 
 # 1. observable, suppressable or causable events, defined in .sig file
@@ -50,10 +52,37 @@ observable event UseNonPII
   fid   : file_id
   exUid : user_id
 
-#5. the assumptions 
+#3. refine the types of events in order to connect to GDPR rules (gdpr.lex)
+refine type data_subject  is user_id
+refine type data          is file_id #.sig file's fid is considered as `data` in gdpr.lex art5 
+#for the GDPR rules (gdpr.lex) art5
+refine type activity      is activity_id
+refine type entity        is string # controller/processor are both string constants in gdpr.lex
+refine type declaration  is decl_id
+refine type criteria     is string
+refine type request      is request_id
+refine type interest     is string
+
+
+#4. define refinement rules
+#The refinement can only use the variables I use in `whenever` part.
+# refine := remplacer un événement abstrait de la loi (eg: DataProcessing event) par un événement concret du système (Use event).
+
 #for art5a's obligations
-assume true PersonalData
-  """data is personal data whenever it is used (art5a)"""
+rule "r_PersonalData_Use"
+  whenever
+    Use(d, ds) #or Collect(d, ds)
+  refine
+    PersonalData(d, ds) 
+
+rule "r_PersonalData_Collect"
+  whenever
+    Collect(d, ds)
+  refine
+    PersonalData(d, ds)
+
+#assume true PersonalData
+#  """data is personal data whenever it is used (art5a)"""
 
 assume true IsFair
   """data is processed fairly whenever it is used by an activity/event (art5a)"""
@@ -61,24 +90,19 @@ assume true IsFair
 assume true IsTransparent
   """the way data is processed/used is transparent to the ds (art5a)"""
 
-#3. refine the types of events in order to connect to GDPR rules (gdpr.lex)
-refine type data_subject  is user_id
-refine type data          is file_id #.sig file's fid is considered as `data` in gdpr.lex art5 
-#for the GDPR rules (gdpr.lex) art5
-refine type activity      is activity_id
-refine type entity        is string # controller/processor are both string constants in gdpr.lex
-
-
-#4. define refinement rules
-#The refinement can only use the variables I use in `whenever` part.
-# refine := remplacer un événement abstrait de la loi (eg: DataProcessing event) par un événement concret du système (Use event).
-
+#a read and a write are both DataProcessing
 #art5a(l159) is triggered by both DataProcessing(l39) and PersonalData(l34) events
-rule "r_DataProcessing"
+rule "r_DataProcessing_Use"
   whenever
-    Use(d, ds)
+    Use(d, _)
   refine
     DataProcessing("GDPRFS", "GDPRFS", "Use", d) #l39 #"Use" activity coz gdpr.lex l42: Data d is processed by processor "GDPRFS" on behalf of controller "GDPRFS" as part of data processing activity "Use"
+
+rule "r_DataProcessing_Write"
+  whenever
+    Write(d, _)
+  refine
+    DataProcessing("GDPRFS", "GDPRFS", "Use", d) #l39 #Write also counts as data processing
 
 #Use refines to DataProcessing. i.e. Use replaces DataProcessing event.
 #this rule is a translator from the system events of FS (computer) to the GDPR law (juridical). 
@@ -145,17 +169,9 @@ assume true IsLimitedToWhatIsNecessary
 #art5d rule "accurate_and_up_to_date"
 
 #Write event but not Use event, coz "Data must be accurate and, where necessary, kept up to date." i.e. "If data is inaccurate, Then I must **correct** it."
-rule "r_IsAccurate"
-  whenever
-    Write(d, p)
-  refine 
-    IsAccurate(d, p)
-
-rule "r_IsUpToDate"
-  whenever
-    Write(d, p)
-  refine
-    IsUpToDate(d, p)
+#it's an limitation: no Writes yet when I first Read the files
+assume true IsAccurate
+assume true IsUpToDate
 
 #art5d rule "accuracy_deletion"
 assume false UndueDataDelay
@@ -280,8 +296,8 @@ assume false IsUnableToConsent
 #The file system has safeguards (stripping data of a file) to protect the fundamental rights and interests of data subjects.
 #safeguard in this FS := If ds doesn’t consent, and file contains multiple data subjects including this ds', Then strip data of the one who hasn't consented yet.
 
-#Whenever we process data of ds AND ds has consented and hasn't revoked consent,,
-# hen safeguards are in place.
+#Whenever we process data of ds AND ds has consented and hasn't revoked consent,
+# so safeguards are in place.
 rule "r_Safeguards"
   whenever
     Use(d, ds)
@@ -359,11 +375,12 @@ rule "r_IsAccessRequest"
     Request(ds, "access", "GDPRFS")
     IsAccessRequest("access")
 
-assume true RequestResponse
-    """Controller GDPRFS responds to data subject's access request with a response that contains the requested information."""
+note "### unrefined ###"
+#assume true RequestResponse
+#    """Controller GDPRFS responds to data subject's access request with a response that contains the requested information."""
 
-assume true Contains
-    """The response to data subject's access request contains the requested information."""
+#assume true Contains
+#    """The response to data subject's access request contains the requested information."""
 
 assume true IsDataProcessingOngoing
     """IsDataProcessingOngoing is a causable event"""
@@ -374,33 +391,10 @@ assume true IsDataProcessingNotOngoing
 assume true IsPurposeOfProcessing
     """IsPurposeOfProcessing is a causable event"""
 
-#rule "r_CategoryIdentity"
-#  whenever
-#    Collect(d, ds)
-#    d = "name.txt" OR d = "id.txt"
-#  refine
-#    HasCategory(d, "identity")
+assume false HasCategory
+    """No data categories are tracked by this FileSystem."""
 
-#rule "r_CategoryContact"
-#  whenever
-#    Collect(d, ds)
-#    d = "email.txt"
-#  refine
-#    HasCategory(d, "contact")
-
-#rule "r_CategoryHealth"
-#  whenever
-#    Collect(d, ds)
-#    d = "health.txt"
-#  refine
-#    HasCategory(d, "health")
-
-assume true HasCategory #todo: like this ok?
-    """Data belongs to a category (eg: identity, contact, health, etc.) whenever it is collected or written."""
-
-#todo: declaration? j'en ai pas dans l'instrumentation?
-assume true IsCategory
-    """data belongs to a category (eg: identity, contact, health, etc.) whenever it is collected or written."""
+#IsCategory unrefined
 
 assume false HasIntendedRecipient
     """todo: no recipient??, sinon cf en bas"""
@@ -589,8 +583,21 @@ assume true NotifyOfErasure
 assume false IsNecessaryForFreedomOfExpression
     """We do not consider this legal basis."""
 
+#art21
+assume false DemonstrateOverridingCompellingGrounds
+    """We never claim compelling groups that override the interests, rights, and freedoms of the data subject."""
+
+rule "r_IsDirectMarketing"
+    whenever
+        p = "marketing"
+    refine
+        IsDirectMarketing(p)
+
+assume false Object
+    """No data subject objects to the processing of their data for direct marketing purposes by default."""
+
 #art30
-#todo: how to refine Record event?
+###unrefine Record###
 
 assume false IsJointController
     """There are no joint controllers."""
@@ -611,8 +618,11 @@ rule "r_IsDataProcessingOfficer"
 assume false HasDataSubjectCategory
     """No activities are specific to a particular data subject category."""
 
-assume true HasSecurityMeasuresDeclaration
-    """The declaration always contains the security measures implemented to protect data."""
+rule "r_HasSecurityMeasuresDeclaration"
+    whenever
+        true
+    refine
+        HasSecurityMeasuresDeclaration(a, "TODO: Complete list of security measures")
 
 rule "r_IsSME"
     whenever

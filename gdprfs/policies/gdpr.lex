@@ -31,6 +31,8 @@ type register
 
 article "5" "Principles relating to processing of personal data"
 
+# predicate := a logical fact, not necc. an event
+# event := sth that the system does.
 observable predicate PersonalData
     """Data {d} is personal data of data subject {ds}"""
     d : data
@@ -93,16 +95,21 @@ observable predicate IsArchival
     """Activity {a} is one of the activities described in Article 89(1)"""
     a : activity
 
+# adequate := Data d processed or collected is enough in quantity and quality to fulfil purpose p, but not more than that.
+# Eg: if the purpose is to send a newsletter, collecting email is adequate; collecting full CVs, health data, or ID numbers is not, because those go far beyond what is needed.
 observable predicate IsAdequate
     """Data {d} is adequate in relation to purpose {p}"""
     d : data
     p : purpose
 
+# := Only data d that is relevant to purpose p should be processed. 
+# Eg: if the purpose is to send a newsletter, collecting email is relevant; collecting full CVs, health data, or ID numbers is not, because those are irrelevant to the purpose.
 observable predicate IsRelevant
     """Data {d} is relevant in relation to purpose {p}"""
     d : data
     p : purpose
 
+# := The system must not process or collect more personal data than is strictly needed to achieve purpose p.
 observable predicate IsLimitedToWhatIsNecessary
     """Data {d} is limited to what is necessary in relation to purpose {p}"""
     d : data
@@ -167,6 +174,8 @@ rule
         IsFair(a)
         IsTransparent(a, ds)
     transparently enforceable suppressing condition[0]
+#everytime there's DataProcessing event AND PersonalData event,
+# the three principles of lawfulness, fairness and transparency must be satisfied.
 
 point "b"
 
@@ -176,7 +185,7 @@ rule "must_have_purpose"
         PersonalData(d, ds)
     oblige 
         EXISTS p. HasPurpose(a, p)
-    transparently enforceable suppressing condition[0]
+    transparently enforceable suppressing condition[0] #means: if an obligation isn't satisfied, then suppress the DataProcessing event which is the 0th condition
 
 rule "purpose_conditions"
     whenever
@@ -185,7 +194,7 @@ rule "purpose_conditions"
         IsSpecified(p)
         IsExplicit(p)
         IsLegitimate(p)
-    transparently enforceable suppressing condition[0]
+    transparently enforceable suppressing condition[0] #means: if an obligation isn't satisfied, then suppress the HasPurpose event which is the 0th condition
 
 rule "purpose_limitation"
     whenever
@@ -203,7 +212,8 @@ rule "general_purpose"
   
 rule "archiving_purpose"
     whenever
-        IsArchival(a)
+        IsArchival(a) #archive = “archiving purposes in the public interest”
+        # IsArchival(a) := “activity a is one of the archival‑type activities (e.g., long‑term preservation for public‑interest, historical or scientific research) described in Article 89(1).”
     constitute
         CompatibleWithPurpose(a, "Archiving")
 
@@ -250,6 +260,12 @@ rule "temporal_storage_limitation"
         IsNecessary(d, p)
     transparently enforceable suppressing condition[0]
 
+# If data is stored,
+# and it was collected for a purpose,
+# then the data must still be necessary to fulfill that purpose p.
+#i.e.
+# If you collected personal data for a purpose,
+# you must delete (or anonymise) it once that purpose is finished.
 
 rule "storage_limitation_exception"
     whenever
@@ -297,6 +313,7 @@ observable predicate IsPublicAuthority
 observable predicate IsPerformanceOfPublicAuthorityTask
     """Data processing activity {a} is part of the performance of a public authority task"""
     a : activity
+# a public authority := a public‑sector body (e.g., police, tax authorities, social‑security agencies, courts)
 
 observable event StartContract
     """The period of effect of contract {co} starts"""
@@ -336,6 +353,7 @@ observable predicate IsNecessaryForPublicInterest
        or in the exercise of official authority, with {pi} being the specific public interest"""
     a : activity
     pi : public_interest
+# Public interest := a task that serves the wider community or society, such as public safety, public health, taxation, social security, or administration of justice.
 
 paragraph "1"
 
@@ -420,29 +438,12 @@ rule
 note "Skipped: OPENING CLAUSE in (2)-(3)."
 note "Paragraph (4) provides condition to assess the compatibility of purposes. This is integrated in the docstring of CompatibleWithPurpose."
 
-article "7" "Conditions for consent"
+#art7
 
-observable predicate IsAbleToDemonstrateConsent
-    """Controller {c} is able to demonstrate that data subject {ds} has given consent for purpose {p}"""
-    c : entity
-    ds : data_subject
-    p : purpose
-
-observable predicate ContainsOtherMatters
-    """The written declaration {de} contains matters other than those related to consent."""
-    de : declaration
-
+# a declaration := a formal statement included in the controller’s response to a request.
+# a subdeclaration := a statement inside a larger declaration.
 causable observable predicate Contains
     """Written declaration {de} contains subdeclaration {de2}"""
-    de : declaration
-    de2 : declaration
-
-causable observable predicate IsConsentRequest
-    """Declaration {de} is a consent request"""
-    de : declaration
-
-causable observable predicate IsDistinguishableFromOtherMatters
-    """Subdeclaration {de} is distinguishable from other matters within declaration {de2}"""
     de : declaration
     de2 : declaration
 
@@ -464,38 +465,6 @@ causable observable predicate Inform
     ds : data_subject
     de : declaration
 
-paragraph "1"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        PersonalData(d, ds)
-        ONCE GiveConsent(ds, p, c)
-    oblige
-        IsAbleToDemonstrateConsent(c, ds, p)
-    transparently enforceable suppressing condition[0]
-
-paragraph "2"
-
-point "1"
-
-rule
-    whenever
-        GiveConsent(ds, p, c)
-        Inform(c, ds, de)       
-        ContainsOtherMatters(de)
-    oblige
-        EXISTS cr. Contains(de, cr) AND IsConsentRequest(cr) AND IsDistinguishableFromOtherMatters(cr, de) AND IsIntelligible(cr) AND IsEasilyAccessible(de) AND IsClearAndPlainLanguage(cr)
-    transparently enforceable causing effects
-
-point "2"
-
-note "Skipped: Any part of such a declaration which constitutes an infringement of this Regulation shall not be binding (NO VIOLATIONS)."
-
-paragraph "3"
-
-point "1"
-
 observable predicate WithdrawConsent
     """Data subject {ds} withdraws their consent previously given to controller {c} for purpose {p}. 
        Per Art. 7(3)(1), can be performed at any time. 
@@ -504,6 +473,8 @@ observable predicate WithdrawConsent
     p : purpose
     c : entity
 
+article "7" 
+paragraph "3"
 point "2"
 
 rule
@@ -511,89 +482,8 @@ rule
         DataProcessing(pr, c, a, d)
         PersonalData(d, ds)
         (NOT WithdrawConsent(ds, p, c)) SINCE GiveConsent(ds, p, c)
-    constitute
-        IsLawful(a, "6(1)(a)")
-
-point "3"
-
-causable observable predicate IsRightToWithdrawConsent
-    """Declaration {de} declares the existence of the right to withdraw consent at any time, without 
-       affecting the lawfulness of processing based on consent before its withdrawal"""
-    de : declaration
-
-
-rule
-    whenever
-        GiveConsent(ds, p, c)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRightToWithdrawConsent(re))
-    transparently enforceable causing effects
-
-point "4"
-
-note "Skipped: integrated in the docstring of GiveConsent."
-
-article "8" "Conditions applicable to child's consent in relation to information society services"
-
-observable predicate IsOfferOfInformationSocietyServices
-    """The activity {a} is performed in relation to the offer of information society services"""
-    a : activity
-
-observable predicate IsChild
-    """The data subject {ds} is a child below the age of 16 years"""
-    ds : data_subject
-
-observable event HoldParentalResponsibility
-    """The data subject {ds} holds parental responsibility over {ds'}"""
-    ds : data_subject
-    ds' : data_subject
-
-observable event AuthorizeConsent
-    """The data subject {ds} authorizes data subject {ds'} to give consent on their behalf to processor {c} for purpose {p}"""
-    ds : data_subject
-    ds' : data_subject
-    p : purpose
-    c : entity
-
-paragraph "1"
-
-paragraph[1] "1"
-
-rule "minor_consent_exception"
-    whenever
-        IsOfferOfInformationSocietyServices(a)
-        IsChild(ds)
-    except
+    scope
         article "6" paragraph "1" paragraph[1] "1" point "a"
-
-rule "minor_consent_valid"
-    whenever
-        DataProcessing(pr, c, a, d)
-        PersonalData(d, ds)
-        ONCE (EXISTS ds2. HoldParentalResponsibility(ds2, ds) AND GiveConsent(ds2, p, c) OR (GiveConsent(ds, p, c) AND ONCE (HoldParentalResponsibility(ds2, ds) AND AuthorizeConsent(ds2, ds, p, c))))
-        IsOfferOfInformationSocietyServices(a)
-        IsChild(ds)
-    constitute
-        IsLawful(a, "8(1)")
-
-note "Skipped: OPENING CLAUSE in subparagraph (2)."
-
-paragraph "2"
-
-observable event CheckNotChild
-    """The controller {c} makes reasonable efforts to verify that data subject {ds} is not a child"""
-    c : entity
-    ds : data_subject
-
-rule
-    whenever
-        GiveConsent(ds, p, c)
-        NOT ONCE (EXISTS ds2. HoldParentalResponsibility(ds2, ds) AND AuthorizeConsent(ds2, ds, p, c))
-    oblige
-        CheckNotChild(c, ds)
-    transparently enforceable suppressing condition[0]
-
-note "Skipped: OPENING CLAUSE in (3)."
 
 article "9" "Processing of special categories of personal data"
 
@@ -623,6 +513,7 @@ observable predicate IsNecessaryForEmploymentLaw
        appropriate safeguards for the fundamental rights and the interests of the data subject."""
     a : activity
 
+# safeguards := technical & organisational protections that prevent abuse.
 observable event ImplementFundamentalRightsSafeguards
     """Processing activity {a} provides for appropriate safeguards to protect the fundamental rights and interests of data subject {ds}."""
     a : activity
@@ -662,33 +553,38 @@ observable predicate IsMember
     ds : data_subject
     c : entity
 
+# "In connection with its purposes" := the contact must relate to the political, philosophical, religious, or trade union aims of the non-profit, not general business dealings.
 observable predicate HasRegularContact
     """Data subject {ds} has regular contact with controller {c} in connection with the purposes of controller {c}'s legitimate activities"""  
     ds : data_subject
     c : entity
 
+# IsOutsideDisclosure(a, c, d) := processing activity a shares or transmits data d to entities or people outside the controller c's organisation without the data subject's consent.
 observable predicate IsOutsideDisclosure
     """Processing activity {a} involves disclosure of data {d} to outsiders of controller {c}"""
     a : activity
     c : entity
     d : data
 
-observable predicate MakePublic
+observable predicate MakePublic #:= like github opensource, but with ds' personal data instead of code.
     """Data subject {ds} makes data {d} public"""
     ds : data_subject
     d : data
 
+# IsNecessaryForJudicialClaims := processing activity a is **strictly** required for legal proceedings, court cases, or judicial functions — either preparing for, conducting, or defending against legal claims.
 observable predicate IsNecessaryForJudicialClaims
     """Processing activity {a} is necessary for the establishment, exercise or defence of legal claims
        or whenever courts are acting in their judicial capacity"""
     a : activity
 
+# IsNecessaryForSubstantialPublicInterest(a) := processing activity a is explicitly authorised by EU or Member State law for a major public benefit (like elections, public health crises, equality monitoring, or national security)
 observable predicate IsNecessaryForSubstantialPublicInterest
     """Processing activity {a} is necessary for reasons of substantial public interest, on the basis of Union or Member State law which shall 
        be proportionate to the aim pursued, respect the essence of the right to data protection and provide for
        suitable and specific measures to safeguard the fundamental rights and the interests of the data subject"""
     a : activity
 
+# IsNecessaryForSpecialMedicalReasons(a) := processing activity a is essential for legitimate medical, occupational health, or social care purposes, and is either directly authorised by EU/Member State law or conducted under contract with a qualified health professional who is bound by professional secrecy.
 observable predicate IsNecessaryForSpecialMedicalReasons
     """Processing activity {a} is necessary for the purposes of preventive or occupational medicine, 
        for the assessment of the working capacity of the employee, medical diagnosis, the provision
@@ -704,6 +600,7 @@ observable predicate IsHealthRelated
        freedoms of the data subject, in particular professional secrecy"""
     pi : public_interest
 
+# IsNecessaryForArchivalPurposes(a) := processing activity a is required for legitimate archiving/research/statistics
 observable predicate IsNecessaryForArchivalPurposes
     """Processing activity {a} is necessary for archiving purposes in the public interest, 
        scientific or historical research purposes or statistical purposes in accordance with 
@@ -847,33 +744,10 @@ rule
 
 note "Skipped: OPENING CLAUSE in (4)."
 
-article "10" "Processing of personal data relating to criminal convictions and offences"
-
+#art10
 observable predicate RelatesToCriminalConvictionsOrOffences
     """Data {d} relates to criminal convictions and offences or related security measures"""
     d : data
-
-observable predicate IsSpecialAuthorizedCriminalProcessing
-    """Activity {a} is authorised by Union or Member State law providing for appropriate safeguards
-       for the rights and freedoms of data subject to process data relating to criminal convictions
-       and offences"""
-    a : activity
-
-observable predicate ConcernsCriminalRegister
-    """Activity {a} concerns a criminal register"""
-    a : activity
-
-rule "criminal_data_prohibition_general"
-    whenever
-        RelatesToCriminalConvictionsOrOffences(d) IMPLIES (IsPublicAuthority(c) OR IsSpecialAuthorizedCriminalProcessing(a))
-    scope
-        article "6" paragraph "1"
-    
-rule "criminal_data_prohibition_register"
-    whenever
-        ConcernsCriminalRegister(a) IMPLIES IsPublicAuthority(c)
-    scope
-        article "6" paragraph "1"
 
 article "12" "Transparent information, communication and modalities for the exercise of the rights of the data subject"
 
@@ -891,7 +765,7 @@ observable event Request
     rq : request
     c : entity
 
-causable observable event RequestResponse
+causable observable event RequestResponse #genere une reponse automatiquement 
     """Controller {c} responds to data subject {ds}'s request {rq} with response {rs}"""
     ds : data_subject
     rq : request
@@ -1065,99 +939,31 @@ note "Skipped: (6) as the MODEL assumes that ds is identified."
 note "Skipped: The information to be provided to data subjects... may [use] standardised icons (PERMISSION)"
 note "Skipped: OPENING CLAUSE in (8)."
 
-article "13" "Information to be provided where personal data are collected from the data subject"
+#art13
+# "categories" := types or classes of personal data being processed
+#the categories: `id`; `name`; `email`; purhaps `health data`
+observable predicate HasCategory
+    """Data {d} belongs to category {cat}"""
+    d : data
+    cat : special_data_category
 
-paragraph "1"
-
-point "a"
+causable observable predicate IsCategory
+    """Declaration {de} declares that the data belongs to category {cat}"""
+    de : declaration
+    cat : special_data_category
 
 observable predicate IsControllerRepresentative
     """Entity {c'} is the controller representative of controller {c}"""
     c : entity
     c' : entity
 
-causable observable predicate IsIdentityOfControllerOrRepresentative
-    """Declaration {de} contains the identity of the controller representative {c}"""
-    de : declaration
-    c : entity
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsControllerRepresentative(c, c')
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsIdentityOfControllerOrRepresentative(re, c'))
-    transparently enforceable causing effects
-
-point "b"
-
+#art13.b
 observable predicate IsDataProtectionOfficer
     """Entity {c'} is the data protection officer of controller {c}"""
     c : entity
     c' : entity
 
-causable observable predicate IsContactDetailsOfDataProtectionOfficer
-    """Declaration {de} contains the contact details of the data protection officer of {c}"""
-    de : declaration
-    c : entity
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsDataProtectionOfficer(c, c')
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsContactDetailsOfDataProtectionOfficer(re, c'))
-    transparently enforceable causing effects
-
-point "c"
-
-causable observable predicate IsPurposeOfProcessing
-    """Declaration {de} declares the purpose of processing {p}"""
-    de : declaration
-    p : purpose
-
-causable observable predicate IsLegalBasisOfProcessing
-    """Declaration {de} declares the legal basis {b}"""
-    de : declaration
-    b : legal_basis
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        HasPurpose(a, p)
-        PersonalData(d, ds)
-        IsLawful(a, b)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsPurposeOfProcessing(re, p))
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsLegalBasisOfProcessing(re, b))
-    transparently enforceable causing effects
-
-point "d"
-
-causable observable predicate IsLegitimateInterest
-    """Declaration {de} declares the legitimate interest {i} of entity {e}"""
-    de : declaration
-    e : entity
-    i : interest
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-        IsLawful(a, "6(1)(f)")
-        IsNecessaryForLegitimateInterest(a, e, i)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsLegitimateInterest(re, e, i))
-    transparently enforceable causing effects
-
-point "e"
-
+#art13.e
 observable predicate HasIntendedRecipient
     """The {d} is collected with the intent to share it with recipient {e}"""
     d : data
@@ -1178,27 +984,56 @@ causable observable predicate IsRecipientCategory
     de : declaration
     e : entity
 
-rule "inform_recipient"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        HasIntendedRecipient(d, e)
-        PersonalData(d, ds)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRecipient(re, e))
-    transparently enforceable causing effects
+causable observable predicate IsPurposeOfProcessing
+    """Declaration {de} declares the purpose of processing {p}"""
+    de : declaration
+    p : purpose
 
-rule "inform_recipient_category"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        HasIntendedRecipientCategory(d, rc)
-        PersonalData(d, ds)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRecipientCategory(re, rc))
-    transparently enforceable causing effects
+# para2.a
+observable predicate HasStoragePeriod
+    """Data {d} has a specified storage period {t}"""
+    d : data
+    t : span
 
-point "f"
+observable predicate HasStorageCriteria
+    """Data {d} has specified storage criteria {c}"""
+    d : data
+    c : criteria
+
+causable observable predicate IsStoragePeriod
+    """Declaration {de} declares the storage period {t}"""
+    de : declaration
+    t : span
+
+causable observable predicate IsStorageCriteria
+    """Declaration {de} declares the storage criteria {c}"""
+    de : declaration
+    c : criteria
+
+#para2.b
+causable observable predicate IsRights
+    """Declaration {de} declares the existence of the right to request from the controller access 
+       to and rectification or erasure of personal data or restriction of processing concerning 
+       the data subject or to object to processing as well as the right to data portability.
+       The right to object (Article 21(1-2)) referred shall be explicitly brought to the attention 
+       of the data subject and shall be presented clearly and separately from any other information."""
+    de : declaration
+
+#art13.f
+# Profiling := any automated processing of personal data to evaluate or predict personal aspects of an individual.
+observable predicate HasIntendedAutomatedDecision
+    """The {d} is collected with the intent to use it for automated decision-making, including profiling,
+       which produces legal effects concerning the data subject or similarly significantly affects the data subject with
+       meaningful information about the logic involved, as well as the significance and the envisaged consequences
+       of such processing for the data subject, declared in {de}"""
+    d : data    
+    de : declaration
+
+causable observable predicate IsAutomatedDecision
+    """Declaration {de} declares that data is used for automated decision-making, including profiling, with meaningful
+       information about the logic involved, as well as the significance and the envisaged consequences
+       of such processing for the data subject"""
+    de : declaration
 
 observable predicate HasIntendedTransfer
     """The {d} is collected with the intent to transfer it to country or international organisation {co}"""
@@ -1219,247 +1054,11 @@ causable observable predicate IsTransferBasis
     de : declaration
     co : country_or_international_organisation
 
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        HasIntendedTransfer(d, co)
-        PersonalData(d, ds)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsTransfer(re, co))
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsTransferBasis(re, co))
-    transparently enforceable causing effects
-
-paragraph "2"
-
-point "a"
-
-observable predicate HasStoragePeriod
-    """Data {d} has a specified storage period {t}"""
-    d : data
-    t : span
-
-observable predicate HasStorageCriteria
-    """Data {d} has specified storage criteria {c}"""
-    d : data
-    c : criteria
-
-observable event IsRespected
-    """Storage criteria {c} of data {d} is respected"""
-    d : data
-    c : criteria
-
-causable observable predicate IsStoragePeriod
-    """Declaration {de} declares the storage period {t}"""
-    de : declaration
-    t : span
-
-causable observable predicate IsStorageCriteria
-    """Declaration {de} declares the storage criteria {c}"""
-    de : declaration
-    c : criteria
-
-note "The first rule is implicit in the formulation of (2)(a)"
-
-rule "has_storage_period_or_criteria"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-    oblige
-        (EXISTS t. HasStoragePeriod(d, t)) OR (EXISTS cr. HasStorageCriteria(d, cr))
-    transparently enforceable suppressing condition[0]
-
-function add_time_span(
-    t : time
-    s : span
-) -> time
-
-rule "respect_storage_period_or_criteria"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-        HasStoragePeriod(d, t)
-        TP(t')
-    oblige
-        (EXISTS t''. TP(t'') AND t'' <= add_time_span(t', t)) UNTIL Delete(d)
-    transparently enforceable causing effects
-
-rule "respect_storage_criteria"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-        HasStorageCriteria(d, cr)
-    oblige
-        IsRespected(d, cr) UNTIL Delete(d)
-    transparently enforceable causing effects
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND (FORALL t. HasStoragePeriod(d, t) IMPLIES IsStoragePeriod(re, t)) AND (FORALL cr. HasStorageCriteria(d, cr) IMPLIES IsStorageCriteria(re, cr)))
-    transparently enforceable causing effects
-
-point "b"
-
-causable observable predicate IsRights
-    """Declaration {de} declares the existence of the right to request from the controller access 
-       to and rectification or erasure of personal data or restriction of processing concerning 
-       the data subject or to object to processing as well as the right to data portability.
-       The right to object (Article 21(1-2)) referred shall be explicitly brought to the attention 
-       of the data subject and shall be presented clearly and separately from any other information."""
-    de : declaration
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRights(re))
-    transparently enforceable causing effects
-
-point "c"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-        IsLawful(a, "6(1)(a)") OR IsLawful(a, "9(2)(a)")
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRightToWithdrawConsent(re))
-    transparently enforceable causing effects
-
-point "d"
-
-causable observable predicate IsRightToLodgeComplaint
-    """Declaration {de} declares the existence of the right to lodge a complaint with a supervisory authority"""
-    de : declaration
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRightToLodgeComplaint(re))
-    transparently enforceable causing effects
-
-point "e"
-
-observable predicate HasStatutoryContractualRequirement
-    """The provision of data {d} is a statutory or contractual requirement {r}, or a requirement necessary to enter
-       into a contract"""
-    d : data
-    r : requirement
-
-causable observable predicate IsStatutoryContractualRequirement
-    """Declaration {de} declares the existence of a statutory or contractual requirement {r}, or a requirement 
-       necessary to enter into a contract, of data subject {ds} with respect to data {d}, as well as the possible 
-       consequences of failure to provide such data"""
-    de : declaration
-    ds : data_subject
-    d : data
-    r : requirement
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-        HasStatutoryContractualRequirement(d, r)
-    oblige
-        ONCE (EXISTS de, re, r. Inform(c, ds, de) AND Contains(de, re) AND IsStatutoryContractualRequirement(re, ds, d, r))
-    transparently enforceable causing effects
-
-point "f"
-
-observable predicate HasIntendedAutomatedDecision
-    """The {d} is collected with the intent to use it for automated decision-making, including profiling,
-       which produces legal effects concerning the data subject or similarly significantly affects the data subject with
-       meaningful information about the logic involved, as well as the significance and the envisaged consequences
-       of such processing for the data subject, declared in {de}"""
-    d : data    
-    de : declaration
-
-observable predicate AutomatedDecision
-    """Activity {a} uses data {d} for automated decision-making, including profiling, with respect to data subject {ds},
-       with meaningful information about the logic involved, as well as the significance and the envisaged consequences
-       of such processing for the data subject, declared in {de}"""
-    a : activity
-    d : data
-    ds : data_subject
-    de : declaration
-
-causable observable predicate IsAutomatedDecision
-    """Declaration {de} declares that data is used for automated decision-making, including profiling, with meaningful
-       information about the logic involved, as well as the significance and the envisaged consequences
-       of such processing for the data subject"""
-    de : declaration
-
-note "The first rule is implicit in the formulation of (2)(f)"
-
-rule "prior_declaration_of_automated_decision"
-    whenever
-        DataProcessing(pr, c, a, d)
-        PersonalData(d, ds)
-        AutomatedDecision(a, d, ds, de)
-    oblige
-        ONCE HasIntendedAutomatedDecision(d, de)
-    transparently enforceable suppressing condition[0]
-
-rule "inform_automated_decision"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsCollection(a, ds)
-        PersonalData(d, ds)
-        HasIntendedAutomatedDecision(d, de)
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsAutomatedDecision(re))
-    transparently enforceable causing effects
-
-paragraph "3"
-
-causable observable predicate IsNewPurpose
-    """Declaration {re} contains information about the new purpose {p} of processing and with any relevant 
-       further information as referred to in paragraph 13(2)"""
-    re : declaration
-    p : purpose
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        PersonalData(d, ds)
-        HasPurpose(a, p)
-        NOT ONCE (EXISTS co, pr'. DataProcessing(pr', c, co, d) AND IsCollection(co, ds) AND HasPurpose(co, p))
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsNewPurpose(re, p))
-    transparently enforceable causing effects
-
-paragraph "4"
-
-note "Skipped: Integrated in the rules above as 'ONCE Inform'."
-
-article "14" "Information to be provided where personal data have not been obtained from the data subject"
-
+#art14
 observable predicate IsReception
     """Activity {a} consists in reception of data from sender entity {e}"""
     a : activity
     e : entity
-
-internal predicate CanDelayInform
-    """Controller {c} can delay informing data subject {ds} about the collection activity {a}"""
-    c : entity
-    ds : data_subject
-    a : activity
-
-note "Define IsIndirectCollection as a shortcut. Note: IsIndirectCollection implies PersonalData"
 
 internal predicate IsIndirectCollection
     a : activity
@@ -1485,178 +1084,7 @@ rule "indirect_collection_def_2"
 
 paragraph "1"
 
-point "a"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsIdentityOfControllerOrRepresentative(re, c)))
-    transparently enforceable causing effects
-
-point "b"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsContactDetailsOfDataProtectionOfficer(re, c)))
-    transparently enforceable causing effects
-
-point "c"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        HasPurpose(a, p)
-        IsLawful(a, b)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsPurposeOfProcessing(re, p)))
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsLegalBasisOfProcessing(re, b)))
-    transparently enforceable causing effects
-
-point "d"
-
-observable predicate HasCategory
-    """Data {d} belongs to category {cat}"""
-    d : data
-    cat : special_data_category
-
-causable observable predicate IsCategory
-    """Declaration {de} declares that the data belongs to category {cat}"""
-    de : declaration
-    cat : special_data_category
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        HasCategory(d, cat)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsCategory(re, cat)))
-    transparently enforceable causing effects
-
-point "e"
-
-rule "inform_recipient"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        HasIntendedRecipient(d, e)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRecipient(re, e)))
-    transparently enforceable causing effects
-
-rule "inform_recipient_category"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        HasIntendedRecipientCategory(d, rc)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRecipientCategory(re, rc)))
-    transparently enforceable causing effects
-
-point "f"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        HasIntendedTransfer(d, co)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsTransfer(re, co)))
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsTransferBasis(re, co)))
-    transparently enforceable causing effects
-
-paragraph "2"
-
-point "a"
-
-note "The first rule is implicit in the formulation of (2)(a)"
-
-rule "has_storage_period_or_criteria"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-    oblige
-        (EXISTS t. HasStoragePeriod(d, t)) OR (EXISTS cr. HasStorageCriteria(d, cr))
-    transparently enforceable suppressing condition[0]
-
-rule "respect_storage_period_or_criteria"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        HasStoragePeriod(d, t)
-        TP(t')
-    oblige
-        (EXISTS t''. TP(t'') AND t'' <= add_time_span(t', t)) UNTIL Delete(d)
-    transparently enforceable causing effects
-
-rule "respect_storage_criteria"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        HasStorageCriteria(d, cr)
-    oblige
-        IsRespected(d, cr) UNTIL Delete(d)
-    transparently enforceable causing effects
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND (FORALL t. HasStoragePeriod(d, t) IMPLIES IsStoragePeriod(re, t)) AND (FORALL cr. HasStorageCriteria(d, cr) IMPLIES IsStorageCriteria(re, cr))))
-    transparently enforceable causing effects
-        
-point "b"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        IsNecessaryForLegitimateInterest(a, e, i)
-        IsLawful(a, "6(1)(f)")
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsLegitimateInterest(re, e, i)))
-    transparently enforceable causing effects
-
-point "c"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRights(re)))
-    transparently enforceable causing effects
-
-point "d"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        IsLawful(a, "6(1)(a)") OR IsLawful(a, "9(2)(a)")
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRightToWithdrawConsent(re)))
-    transparently enforceable causing effects
-
-point "e"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRightToLodgeComplaint(re)))
-    transparently enforceable causing effects
-
-point "f"
-
+#art14.f
 causable observable predicate IsReceptionSource
     """Declaration {re} declares the source {e} from which the personal data originate, and if applicable,
        whether it came from publicly accessible sources"""
@@ -1668,107 +1096,6 @@ causable observable predicate IsDSSource
        whether it came from publicly accessible sources"""
     re : declaration
     ds' : data_subject
-
-rule "inform_reception_source"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        IsReception(a, e)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsReceptionSource(re, e)))
-    transparently enforceable causing effects
-
-rule "inform_dssource"
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds')
-        IsReception(a, e)
-        PersonalData(d, ds)
-        ds <> ds'
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsDSSource(re, ds')))
-    transparently enforceable causing effects
-
-point "g"
-
-rule 
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsIndirectCollection(a, d, ds)
-        HasIntendedAutomatedDecision(d, de)
-    oblige
-        CanDelayInform(c, ds, a) UNTIL[0, 1M] (ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsAutomatedDecision(re)))
-    transparently enforceable causing effects
-
-paragraph "3"
-
-observable predicate IsReasonablePeriod
-    """The period from time {t} to time {t'} is a reasonable period, having regard to the specific circumstances in which the personal data
-       are processed;"""
-    t : time
-    t' : time
-
-observable event UseForCommunication
-    """The data {d} are used for communication with the data subject {ds}"""
-    d : data
-    ds : data_subject
-
-observable event Disclose
-    """The data {d} are disclosed to data subject {ds}"""
-    d : data
-    ds : data_subject
-
-rule
-    whenever
-        ONCE (DataProcessing(pr, c, a, d) AND TP(t))
-        TP(t')
-        IsReasonablePeriod(t, t')
-        NOT UseForCommunication(d, ds)
-        NOT (EXISTS ds'. Disclose(d, ds') AND ds <> ds')
-    constitute
-        CanDelayInform(c, ds, a) 
-
-paragraph "4"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        PersonalData(d, ds)
-        HasPurpose(a, p)
-        NOT ONCE (EXISTS pr', co. DataProcessing(pr', c, co, d) AND IsIndirectCollection(co, d, ds) AND HasPurpose(co, p))
-    oblige
-        ONCE (EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsNewPurpose(re, p))
-    transparently enforceable suppressing condition[0]
-
-paragraph "5"
-
-point "a"
-
-note "Skipped: Integrated in the rules above as 'ONCE Inform'."
-
-point "b"
-
-observable predicate DisproportionateEffortToInform
-    """It would involve a disproportionate effort for controller {c} to inform data subject {ds} about the collection activity {a},
-       in particular for processing for archiving purposes in the public interest, scientific or historical research purposes or 
-       statistical purposes, subject to the conditions and safeguards referred to in Article 89(1) or in so far as the obligation referred
-       to in paragraph 1 of this Article is likely to render impossible or seriously impair the achievement of the objectives
-       of that processing. In such cases the controller shall take appropriate measures to protect the data subject's rights
-       and legitimate interests, including making the information publicly available"""
-    c : entity
-    ds : data_subject
-    a : activity
-
-rule
-    whenever
-        DisproportionateEffortToInform(c, ds, a)
-    except
-        paragraph "1"
-        paragraph "2"
-        paragraph "3"   
-        paragraph "4"
-
-note "Skipped: OPENING CLAUSE in (c)-(d)."
 
 article "15" "Right of access by the data subject"
 
@@ -2174,236 +1501,6 @@ rule
         paragraph "1"
         paragraph "2"
 
-article "18" "Right to restriction of processing"
-
-observable predicate IsRestrictionRequest
-    """Request {rq} is a restriction request for data {d} and purpose {p}."""
-    rq : request
-    d : data
-    p : purpose
-
-observable predicate ContestsAccuracy
-    """Request {rq} specifies that data {d} is contested to be inaccurate, and specifies the rectified data {d'}."""
-    rq : request
-    d : data
-    d' : data
-
-internal predicate Restricted
-    """Processing of data {d} for purpose {p} is restricted."""
-    d : data
-    p : purpose
-
-suppressable event LiftRestriction
-    """Controller {c} lifts the restriction on data {d} due to request {rq}."""
-    c : entity
-    d : data
-    rq : request
-
-paragraph "1"
-
-point "a"
-
-rule
-    whenever
-        ONCE (Request(ds, rq, c) AND IsRestrictionRequest(rq, d, p) AND ContestsAccuracy(rq, d, d'))
-        ((NOT EXISTS d''. Rectify(d, d'')) SINCE RequestResponse(ds, rq, rs)) OR NOT ONCE LiftRestriction(c, d, rq)
-    constitute
-        Restricted(d, p)
-
-point "b"
-
-note "Skipped: data is never unlawfully processed in this model (NO VIOLATION)."
-
-point "c"
-
-observable predicate DataIsNecessaryForJudicialClaims
-    """Data {d} is necessary for the establishment, exercise or defence of legal claims."""
-    d : data
-
-rule
-    whenever
-        (NOT LiftRestriction(c, d, rq)) SINCE (Request(ds, rq, c) AND IsRestrictionRequest(rq, d, p) AND DataIsNecessaryForJudicialClaims(d))
-    constitute
-        Restricted(d, p)
-    
-point "d"
-
-rule
-    whenever
-        PersonalData(d, ds)  
-        IsActiveObjection(ds, c, p, de)
-    constitute
-        Restricted(d, p)
-
-paragraph "2"
-
-observable predicate IsStorage
-    """Activity {a} consists in storing data."""
-    a : activity
-
-observable predicate IsNecessaryForProtectionOfRights
-    """Activity {a} is necessary for the protection of the rights of another natural or legal person {e}."""
-    a : activity
-    e : entity
-
-observable predicate IsNecessaryForImportantPublicInterest
-    """Activity {a} is necessary for reasons of important public interest {pi}, on the basis of Union or Member State law."""
-    a : activity
-    pi : public_interest
-
-rule
-    whenever
-        Restricted(d, p)
-        DataProcessing(pr, c, a, d)
-        HasPurpose(a, p)
-        NOT IsStorage(a)
-    oblige
-        IsLawful(a, "6(1)(a)") OR IsLawful(a, "9(2)(a)") OR IsNecessaryForJudicialClaims(a) OR (EXISTS e. IsNecessaryForProtectionOfRights(a, e)) OR (EXISTS pi. IsNecessaryForImportantPublicInterest(a, pi))
-    transparently enforceable suppressing condition[1]
-
-paragraph "3"
-
-observable predicate IsRestrictionToBeLifted
-    """Declaration {re} declares that the restriction on data {d} due to request {rq} is to be lifted."""
-    re : declaration
-    d : data
-    rq : request
-
-rule
-    whenever
-        LiftRestriction(c, d, rq)
-    oblige
-        ONCE (EXISTS ds, de, re. Inform(c, ds, de) AND Contains(de, re) AND IsRestrictionToBeLifted(re, d, rq))
-    transparently enforceable suppressing conditions
-
-article "19" "Notification obligation regarding rectification or erasure of personal data or restriction of processing"
-
-causable observable event NotifyOfRectification
-    """The controller {c}, unless this proves impossible or involves disproportionate effort, communicates
-       to {e} the rectification of data {d} to {d'}."""
-    c : entity
-    e : entity
-    d : data
-    d' : data
-
-causable observable event NotifyOfRestriction
-    """The controller {c}, unless this proves impossible or involves disproportionate effort, communicates
-       to {e} the restriction of data {d} for purpose {p}."""
-    c : entity
-    e : entity
-    d : data
-    p : purpose
-
-observable event IsRecipientRequest
-    """Request {rq} is a request for information about the recipients to whom data {d} have been disclosed."""
-    rq : request
-    d : data
-    
-rule "notify_rectification"
-    whenever
-        IsObligedToRectify(c, d, d')
-        ONCE Share(c, e, d)
-    oblige
-        NOT UndueDataDelay(d) UNTIL NotifyOfRectification(c, e, d, d')
-    transparently enforceable causing effects
-
-rule "notify_erasure"
-    whenever
-        IsObligedToDelete(c, d)
-        ONCE Share(c, e, d)
-    oblige
-        NOT UndueDataDelay(d) UNTIL NotifyOfErasure(c, e, d)
-    transparently enforceable causing effects
-
-rule "notify_restriction"
-    whenever
-        Restricted(d, p) AND NOT PREVIOUS Restricted(d, p)
-        ONCE Share(c, e, d)
-    oblige
-        NOT UndueDataDelay(d) UNTIL NotifyOfRestriction(c, e, d, p)
-    transparently enforceable causing effects
-
-rule "access_request_recipient"
-    whenever
-        ONCE (Request(ds, rq, c) AND IsRecipientRequest(rq, d))
-        RequestResponse(ds, rq, rs)
-        EXISTS pr, a. (ONCE DataProcessing(pr, c, a, d) AND PersonalData(d, ds))
-        ONCE Share(c, e, d)
-    oblige
-        EXISTS de. Contains(rs, de) AND IsRecipient(de, e)
-    transparently enforceable causing effects
-
-article "20" "Right to data portability"
-
-causable observable predicate IsPortabilityRequest
-    """Request {rq} is a data portability request"""
-    rq : request
-
-causable observable predicate IsStructuredFormat
-    """File {f} is in a structured format"""
-    f : file
-
-causable observable predicate IsMachineReadableFormat
-    """File {f} is in a machine-readable format"""
-    f : file
-
-observable predicate SpecifiesNewController
-    """Request {rq} specifies a new controller {c'} to which the data should be transmitted"""
-    rq : request
-    c' : entity
-
-observable predicate IsDirectTransmissionFeasible
-    """It is feasible for controller {c} to directly transmit data to controller {c'}"""
-    c : entity
-    c' : entity
-
-causable observable predicate Transmit
-    """Controller {c} transmits file {f} to controller {c'}"""
-    c : entity
-    c' : entity
-    f : file
-
-paragraph "1"
-
-rule
-    whenever
-        ONCE (Request(ds, rq, c) AND IsPortabilityRequest(rq))
-        RequestResponse(ds, rq, rs)
-        EXISTS pr, d. (ONCE (DataProcessing(pr, c, a, d) AND PersonalData(d, ds) AND (IsLawful(a, "6(1)(a))") OR IsLawful(a, "6(1)(b)") OR IsLawful(a, "9(2)(a)"))))
-    oblige
-        EXISTS f. ContainsData(rs, f) AND PersonalDataCopy(f, ds) AND IsStructuredFormat(f) AND IsCommonlyUsedFormat(f) AND IsMachineReadableFormat(f)
-    enforceable causing effects
-
-note "Skip: the data subjects have the right to transmit those data to another controller (formalized in next paragraph)."
-note "Skip: the processing is carried out by automated means (MODEL)."
-
-paragraph "2"
-
-rule
-    whenever
-        ONCE (Request(ds, rq, c) AND IsPortabilityRequest(rq) AND SpecifiesNewController(rq, c'))
-        RequestResponse(ds, rq, rs)
-        EXISTS pr, a, d. (ONCE (DataProcessing(pr, c, a, d) AND PersonalData(d, ds) AND (IsLawful(a, "6(1)(a))") OR IsLawful(a, "6(1)(b)") OR IsLawful(a, "9(2)(a)"))))
-        IsDirectTransmissionFeasible(c, c')
-        ContainsData(rs, f)
-    oblige
-        Transmit(c, c', f)
-    enforceable causing effects
-
-paragraph "3"
-
-rule
-    whenever
-        IsNecessaryForPublicInterest(a, pi) OR IsPerformanceOfPublicAuthorityTask(a) AND IsPublicAuthority(c)
-    except
-        paragraph "1"
-
-note "Skipped: without prejudice to Article 17 (taken into account in interpretation)."
-
-paragraph "4"
-
-note "Skipped: integrated in the docstring of PersonalDataCopy."
-
 article "21" "Right to object"
 
 observable event Object
@@ -2492,68 +1589,6 @@ rule "object_archiving_override"
     except
         rule "object_archiving_exception"
         rule "object_archiving_definition"
-
-article "22" "Automated individual decision-making, including profiling"
-
-paragraph "1"
-
-observable predicate IsAutomatedDecisionMakingPurpose
-    """Purpose {p} is a purpose that consists in making a decision based solely on automated processing,
-       including profiling, which produces legal effects concerning the data subject or similarly significantly
-       affects the data subject."""
-    p : purpose
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        PersonalData(d, ds)
-    oblige
-        NOT (EXISTS de. AutomatedDecision(a, d, ds, de))
-    transparently enforceable suppressing condition[0]
-
-paragraph "2"
-
-point "a"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        IsNecessaryForContract(a, co)
-        (NOT EndContract(co)) SINCE ((PrepareContract(co) OR StartContract(co)) AND IsContractParty(ds, co))
-    except
-        paragraph "1"
-
-note "Skipped: OPENING CLAUSE in (b)"
-
-point "c"
-
-rule
-    whenever
-        DataProcessing(pr, c, a, d)
-        (NOT WithdrawConsent(ds, p, c)) SINCE GiveConsent(ds, p, c)
-        IsAutomatedDecisionMakingPurpose(p)
-    except
-        paragraph "1"
-
-paragraph "3"
-
-note "Skip: 'suitable measures' are implemented as part of the model"
-
-paragraph "4"
-
-rule "special_categories_decision_making_prohibition"
-    whenever
-        PersonalData(d, ds)
-        IsSpecialData(d, sp)
-        ImplementFundamentalRightsSafeguards(a, ds)
-    except
-        paragraph "2"
-
-rule "special_categories_decision_making_exception"
-    whenever
-        IsLawful(a, "9(2)(a)") OR IsLawful(a, "9(2)(g)")
-    except
-        rule "special_categories_decision_making_prohibition"
 
 article "30" "Records of processing activities"
 
@@ -2778,402 +1813,3 @@ rule
         EXISTS d', sp. (DataProcessing(pr, c, a, d') AND IsSpecialData(d', sp) OR RelatesToCriminalConvictionsOrOffences(d'))
     except
         rule "SME_exemption"
-
-article "44" "General principles for transfers"
-
-rule 
-    whenever
-        DataProcessing(pr, c, a, d)
-        PersonalData(d, ds)
-    oblige
-        NOT Transfer(a, c', pr', co, sg)
-    enforceable causing effects
-
-article "45" "Transfers on the basis of an adequacy decision"
-
-paragraph "1"
-
-observable predicate AdequacyDecision
-    """Country or international organisation {co} is subject to an adequacy decision by the Commission."""
-    co : country_io
-
-rule
-    whenever
-        AdequacyDecision(co)
-    except
-        article "44"
-
-article "46" "Transfers subject to appropriate safeguards"
-
-paragraph "1"
-
-internal predicate IsAppropriateSafeguards
-    """Safeguards {sg} are appropriate"""
-    sg : safeguards
-
-observable predicate HasEnforceableRights
-    """Safeguards {sg} provide enforceable rights and effective legal remedies for data subjects."""
-    sg : safeguards
-
-rule
-    whenever
-        Transfer(a, c', pr', co, sg)
-        IsAppropriateSafeguards(sg)
-        HasEnforceableRights(sg)
-    except
-        article "44"
-
-paragraph "2"
-
-observable predicate IsLegallyBindingInstrument
-    """Safeguards {sg} consist of a legally binding and enforceable instrument between public authorities or bodies"""
-    sg : safeguards
-
-observable predicate IsBindingCorporateRules
-    """Safeguards {sg} consist of binding corporate rules in accordance with Article 47"""
-    sg : safeguards
-
-observable predicate IsCommissionStandardClauses
-    """Safeguards {sg} consist of standard data protection clauses adopted by the Commission in accordance with the examination procedure referred to in Article 93(2)"""
-    sg : safeguards
-
-observable predicate IsSupervisoryAuthorityStandardClauses
-    """Safeguards {sg} consist of standard data protection clauses adopted by a supervisory authority and approved by the Commission pursuant to the examination procedure referred to in Article 93(2)"""
-    sg : safeguards
-
-observable predicate IsApprovedCodeOfConduct
-    """Safeguards {sg} consist of an approved code of conduct pursuant to Article 40 together with binding and enforceable commitments of the controller or processor in the third country to apply the appropriate safeguards, including as regards data subjects' rights"""
-    sg : safeguards
-
-observable predicate IsApprovedCertificationMechanism
-    """Safeguards {sg} consist of an approved certification mechanism pursuant to Article 42 together with binding and enforceable commitments of the controller or processor in the third country to apply the appropriate safeguards, including as regards data subjects' rights"""
-    sg : safeguards
-
-point "a"
-
-rule
-    whenever
-        IsLegallyBindingInstrument(sg)
-    constitute
-        IsAppropriateSafeguards(sg)
-
-point "b"
-
-rule
-    whenever
-        IsBindingCorporateRules(sg)
-    constitute
-        IsAppropriateSafeguards(sg)
-
-point "c"
-
-rule
-    whenever
-        IsCommissionStandardClauses(sg)
-    constitute
-        IsAppropriateSafeguards(sg)
-
-point "d"
-
-rule
-    whenever
-        IsSupervisoryAuthorityStandardClauses(sg)
-    constitute
-        IsAppropriateSafeguards(sg)
-
-point "e"
-
-rule
-    whenever
-        IsApprovedCodeOfConduct(sg)
-    constitute
-        IsAppropriateSafeguards(sg)
-
-point "f"
-
-rule
-    whenever
-        IsApprovedCertificationMechanism(sg)
-    constitute
-        IsAppropriateSafeguards(sg)
-
-paragraph "3"
-
-observable predicate HasSupervisoryApproval
-    """Contract {ct} has obtained the approval of the competent supervisory authority for the safeguards {sg}."""
-    ct : contract
-    sg : safeguards
-
-observable predicate IsContractualClauses
-    """Contractual clauses {ct} between the controller {c} or processor {pr} and the controller {c'} or processor {pr'} 
-       in the third country or international organisation provide the safeguards {sg}."""
-    ct : contract
-    c : entity
-    pr : entity
-    c' : entity
-    pr' : entity
-    sg : safeguards
-
-observable predicate IsAdministrativeArrangement
-    """Provisions {ct} to be inserted into administrative arrangements with the public authority {co}, including
-       enforceable and effective data subject rights, provide the safeguards {sg}."""
-    ct : contract
-    co : country_io
-    sg : safeguards
-
-point "a"
-
-rule
-    whenever
-        IsContractualClauses(ct, c, pr, c', pr', sg)
-        HasSupervisoryApproval(ct, sg)
-    constitute
-        IsAppropriateSafeguards(sg)
-
-point "b"
-
-rule 
-    whenever
-        IsAdministrativeArrangement(ct, co, sg)
-        HasSupervisoryApproval(ct, sg)
-    constitute
-        IsAppropriateSafeguards(sg)
-
-article "49" "Derogations for specific situations"
-
-paragraph "1"
-
-paragraph[1] "1"
-
-point "a"
-
-observable predicate IsRisksOfTransfer
-    """The declaration {re} identifies specific risks associated with the transfer to country or international organisation {co} 
-       to controller {c'} with processor {pr'} in country or international organisation {co} subject to safeguards {sg}."""
-    re : declaration
-    c' : entity
-    pr' : entity
-    co : country_io
-    sg : safeguards
-
-rule
-    whenever
-        ONCE (Transfer(a, c', pr', co, sg) AND ONCE Inform(c, ds, de) AND Contains(de, re) AND IsRisksOfTransfer(re, c', pr', co, sg))
-    except
-        article "44"
-
-point "b"
-
-observable event RequestContractPreparation
-    """Data subject {ds} requests the preparation of contract {co}."""
-    ds : data_subject
-    co : contract
-
-rule
-    whenever
-        (NOT EndContract(con)) SINCE ((PrepareContract(con) AND (ONCE RequestContractPreparation(ds, con)) OR StartContract(con)) AND IsContractParty(ds, con))
-        IsNecessaryForContract(a, con)
-    except
-        article "44"
-
-point "c"
-
-observable predicate IsInInterestOf
-    """The contract {co} is in the interest of data subject {ds}."""
-    co : contract
-    ds : data_subject
-
-rule
-    whenever
-        (NOT EndContract(con)) SINCE ((PrepareContract(con) OR StartContract(con)) AND IsContractParty(ds, con))
-        IsInInterestOf(con, ds)
-        IsNecessaryForContract(a, con)
-    except
-        article "44"
-
-point "d"
-
-rule
-    whenever
-        IsNecessaryForImportantPublicInterest(a, pi)
-    except
-        article "44"
-
-point "e"
-
-rule
-    whenever
-        IsNecessaryForJudicialClaims(a)
-    except
-        article "44"
-
-point "f"
-
-rule
-    whenever
-        IsNecessaryForVitalInterests(a, ds', v)
-        IsUnableToConsent(ds')
-    except
-        article "44"
-
-point "g"
-
-observable predicate IsOpenRegisterData
-    """Data {d} is personal data contained in a public register {reg} which according to Union or Member State law is 
-       intended to provide information to the public and which is open to consultation by the public or by any 
-       person who can demonstrate a legitimate interest, but only to the extent that the conditions laid down in 
-       Union or Member State law for consultation are fulfilled in the particular case."""
-    d : data
-    reg : register
-
-observable predicate FulfillsConsultationConditions
-    """The conditions laid down in Union or Member State law for consultation of data {d} are fulfilled in the particular case."""
-    a : activity
-    d : data
-
-rule
-    whenever
-        IsOpenRegisterData(d, reg)
-        FulfillsConsultationConditions(a, d)
-    except
-        article "44"
-
-paragraph[1] "2"
-
-observable predicate IsNotRepetitiveTransfer
-    """The transfer to controller {c'} with processor {pr'} in country or international organisation {co} subject to safeguards {sg} 
-       in the context of activity {a} is not a repetitive transfer."""
-    a : activity
-    c' : entity
-    pr' : entity
-    co : country_io
-    sg : safeguards
-
-observable predicate IsLimitedDSTransfer
-    """The transfer to controller {c'} with processor {pr'} in country or international organisation {co} subject to safeguards {sg}
-      in the context of activity {a} concerns only a limited set of data subjects."""
-    a : activity
-    c' : entity
-    pr' : entity
-    co : country_io
-    sg : safeguards
-
-observable predicate AssessTransfer
-    """Controller {c} has assessed the transfer to controller {c'} with processor {pr'} in country or international organisation {co} 
-       subject to safeguards {sg} in the context of activity {a}, resulting in declaration {de}."""
-    c : entity
-    a : activity
-    c' : entity
-    pr' : entity
-    co : country_io
-    sg : safeguards
-    de : declaration
-
-internal predicate LastResortTransfer
-    """The transfer from controller {c} to controller {c'} with processor {pr'} in country or international organisation {co} subject to safeguards {sg} 
-       in the context of activity {a} is a last resort transfer."""
-    a : activity
-    c : entity
-    c' : entity
-    pr' : entity
-    co : country_io
-    sg : safeguards
-    i : interest
-
-causable observable predicate ReportLastResortTransfer
-    """Controller {c} reports to the DPA the last resort transfer to controller {c'} with processor {pr'} in country or international 
-       organisation {co} subject to safeguards {sg} in the context of activity {a}, justified by legitimate interest {i}."""
-    a : activity
-    c : entity
-    c' : entity
-    pr' : entity
-    co : country_io
-    sg : safeguards
-    i : interest
-
-causable observable predicate IsLastResortTransfer
-    """The declaration {re} reports that the transfer from controller {c} to controller {c'} with processor {pr'} in country 
-       or international organisation {co} subject to safeguards {sg} 
-       is a last resort transfer justified by legitimate interest {i}."""
-    re : declaration
-    c : entity
-    c' : entity
-    pr' : entity
-    co : country_io
-    sg : safeguards
-    i : interest
-
-rule "last_resort_transfer"
-    whenever
-        IsNotRepetitiveTransfer(a, c', pr', co, sg)
-        IsLimitedDSTransfer(a, c', pr', co, sg)
-        IsNecessaryForLegitimateInterest(a, c, i) AND NOT IsOverriddenByDataSubjectInterests(c, i, ds)
-        ONCE AssessTransfer(c, a, c', pr', co, sg, de)
-        IsAppropriateSafeguards(sg)
-    constitute
-        LastResortTransfer(a, c, c', pr', co, sg, i)
-
-rule "last_resort_transfer_exception"
-    whenever
-        LastResortTransfer(a, c, c', pr', co, sg, i)
-    except
-        article "44"
-
-rule "last_resort_transfer_report"
-    whenever
-        DataProcessing(pr, c, a, d)
-        LastResortTransfer(a, c, c', pr', co, sg, i)
-        PersonalData(d, ds)
-    oblige
-        ReportLastResortTransfer(a, c, c', pr', co, sg, i)
-        EXISTS de, re. Inform(c, ds, de) AND Contains(de, re) AND IsLastResortTransfer(re, c, c', pr', co, sg, i)
-    transparently enforceable causing effects
-
-paragraph "2"
-
-observable predicate IsLimitedRegisterData
-    """The data from register {reg} used in activity {a} is limited to what is necessary as per Art. 49(2)."""
-    a : activity
-    reg : register
-
-observable predicate IsLegitimateInterestRegister
-    """The register {reg} is intended for consultation by any person who can demonstrate a legitimate interest."""
-    reg : register
-
-observable event ValidRegisterConsultationRequest
-    """A data subject {ds} with legitimate interest {i} makes a request to consult data {d} from register {reg} 
-       based on legitimate interest {i}."""
-    ds : data_subject
-    d : data
-    reg : register
-    i : interest
-
-rule
-    whenever
-        IsLimitedRegisterData(a, reg)
-        IsLegitimateInterestRegister(reg) IMPLIES (EXISTS ds'. ONCE ValidRegisterConsultationRequest(ds', d, reg, i))
-    scope
-        paragraph "1" paragraph[1] "1" point "g"
-
-paragraph "3"
-
-rule
-    whenever
-        IsPerformanceOfPublicAuthorityTask(a) AND IsPublicAuthority(c)
-    except
-        paragraph "1" paragraph[1] "1" point "a"
-        paragraph "1" paragraph[1] "1" point "b"
-        paragraph "1" paragraph[1] "1" point "c"
-        paragraph "1" paragraph[1] "2"
-
-note "Skipped the opening clause in paragraphs (4)-(5)."
-
-paragraph "6"
-
-note "First part (safeguards) already formalized in Art. 30"
-
-rule
-    whenever
-        AssessTransfer(c, a, c', pr', co, sg, de)
-    oblige
-        Record(c, c, a, "TransferAssessment", string_of_declaration(de))
