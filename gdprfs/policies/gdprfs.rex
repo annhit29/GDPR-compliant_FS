@@ -42,6 +42,15 @@ observable event Revoke
   exUid : user_id
   p     : purpose
 
+observable event SpecialData
+  fid : file_id
+  spCat : special_data_category
+
+observable event SpecialConsent
+    exUid : user_id
+    p : purpose
+    spCat : special_data_category
+
 observable event RequestAccess
   exUid : user_id
 
@@ -62,7 +71,7 @@ refine type declaration  is decl_id
 refine type criteria     is string
 refine type request      is request_id
 refine type interest     is string
-
+refine type special_data_category is string
 
 #4. define refinement rules
 #The refinement can only use the variables I use in `whenever` part.
@@ -183,8 +192,9 @@ assume false UndueDataDelay
 
 #so Every write operation counts as correcting the data.
 
-assume true Rectify
-    """Data is rectified whenever it is written. The old data in the file is rectified to the new data in the file."""
+#unrefine Rectify
+#assume true Rectify
+#    """Data is rectified whenever it is written. The old data in the file is rectified to the new data in the file."""
     
 #rule "r_Rectify"
 #  whenever
@@ -220,9 +230,10 @@ assume true EnsuresAppropriateSecurity
 #art6.1.a
 rule "r_GiveConsent"
     whenever
-        Consent(ds, p)
+        Consent(ds, p) OR (EXISTS spCat. SpecialConsent(ds, p, spCat))
     refine
         GiveConsent(ds, p, "GDPRFS")
+
 # Consent event refines to GiveConsent event. i.e. Consent replaces GiveConsent event.
 
 #art6.1.b
@@ -276,13 +287,23 @@ rule "r_IsOverriddenByDataSubjectInterests"
 
 #art9
 #para1
-assume false IsSpecialData #todo: what about medical certificate? this is health data, but sensitive enough?
-    """This FileSystem does not process sensitive personal data (eg: political opinions, religious beliefs, sexual orientation, etc.)."""
+rule "r_IsSpecialData"
+  whenever
+    SpecialData(d, spCat)
+  refine
+    IsSpecialData(d, spCat)
+
+#assume false IsSpecialData #todo: what about medical certificate? this is health data, but sensitive enough?
+#    """This FileSystem does not process sensitive personal data (eg: political opinions, religious beliefs, sexual orientation, etc.)."""
 #todo: LLM: flag <- detecte dans les fichiers si une des special data presente
 
 #para2a
-assume false GiveSpecialConsent
-  """todo: implement LLM then maybe give extra param for Consent event indicating special?"""
+rule "r_GiveSpecialConsent"
+    whenever
+        SpecialConsent(ds, p, spCat)
+    refine
+        GiveSpecialConsent(ds, p, "GDPRFS", spCat)
+#  """todo: implement LLM then maybe give extra param for Consent event indicating special?"""
 
 #para2b
 assume false IsNecessaryForEmploymentLaw
@@ -306,7 +327,6 @@ rule "r_Safeguards"
     ImplementFundamentalRightsSafeguards("Use", ds)
 
 # legitimate activities := normal operations directly tied to the organisation's political, philosophical, religious, or trade union aims
-#todo: ig it's sensitive, dealing w/ LLM?
 assume false IsLegitimateActivity
     """We never claim a legitimate activity with respect to a controller with a political, philosophical, religious, or trade union aim."""
 
@@ -391,7 +411,7 @@ assume true IsDataProcessingNotOngoing
 assume true IsPurposeOfProcessing
     """IsPurposeOfProcessing is a causable event"""
 
-assume false HasCategory
+assume false HasCategory 
     """No data categories are tracked by this FileSystem."""
 
 #IsCategory unrefined
@@ -550,11 +570,18 @@ assume false HasInaccuracy
 #Whenever the system writes (updates) data d,
 #we consider that a rectification request was made
 #asking to rectify data d into d.
-rule "r_RectificationRequest"
-  whenever
-    Write(d, p)
-  refine
-    IsRectificationRequest("rectify", d, d)
+#Commented out: Write is suppressable but Rectify must be causable,
+#creating an unsatisfiable typing constraint (SSup ≥ t(Write) ∧ t(Write) ≥ NSup).
+#Since HasInaccuracy is assumed false, this rule is unreachable anyway.
+#rule "r_RectificationRequest"
+#  whenever
+#    Write(d, p)
+#  refine
+#    IsRectificationRequest("rectify", d, d)
+
+assume false IsRectificationRequest
+    """No rectification requests arise since HasInaccuracy is assumed false (no data is inaccurate).
+    No inaccuracies means no rectification requests."""
 
 #todo: supprimer <- data processing = Write event included too
 

@@ -299,6 +299,16 @@ schema.add('RequestErasure', [str]) # request erasure of all DS data events in t
 schema.add('RequestResponse', [str, str, str])
 schema.add('Contains', [str, str])
 
+#for art9
+schema.add('Rectify', [str, str]) # for rectification events
+schema.add('SpecialConsent', [str, str, str]) # for special category data consent (uid, purpose, spCat)
+schema.add('SpecialData', [str, str]) # for special category data (file_id, spCat)
+
+#for art13 and art15
+schema.add('IsCategory', [str, str])
+
+#for art30
+schema.add('Record', [str, str, str, str, str]) # for recording an event in the data subject's record
 
 # ========== HANDLERS ==========
 def none_handler(event_name, event_args, response, *args, **kwargs):
@@ -312,8 +322,11 @@ def none_handler(event_name, event_args, response, *args, **kwargs):
 suppression_handlers = {('Use'): none_handler, ('Write'): none_handler}
 causation_handlers = {
     ('Delete'): none_handler,
+    ('IsCategory'): none_handler,
     ('RequestResponse'): none_handler,  # enforcer handles Art 15 response
-    ('Contains'): none_handler          # enforcer handles response content
+    ('Contains'): none_handler,          # enforcer handles response content
+    ('Rectify'): none_handler,           # enforcer handles rectification
+    ('Record'): none_handler,            # enforcer handles recording the event
 }
 
 # ========== MAPPINGS ==========

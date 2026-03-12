@@ -4,10 +4,13 @@ Contains(de: string, de2: string)+
 Delete(d: string)+
 IsCategory(de: string, cat: string)+
 Record(pr: string, c: string, a: string, p: string, v: string)+
+Rectify(d_old: string, d_new: string)+
 RequestAccess(exUid: string)
 RequestErasure(exUid: string)
 RequestResponse(ds: string, rq: string, rs: string)+
 Revoke(exUid: string, p: string)
+SpecialConsent(exUid: string, p: string, spCat: string)
+SpecialData(fid: string, spCat: string)
 StartSession(inUid: string, p: string, reason: string)
 StopSession(inUid: string)
 TP(t: int)
