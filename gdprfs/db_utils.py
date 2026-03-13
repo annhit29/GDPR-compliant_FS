@@ -52,6 +52,8 @@ def _is_temp_name(fuse_path: str) -> bool:
         or name.startswith(".~lock") # LibreOffice lock file
         or name.endswith(".tmp") # generic temp
         or name.endswith(".csv#") # LibreOffice temp variant
+
+        or name.startswith(".fuse_hidden") # FUSE internal hidden files (created during unlink-while-open)
     )
 
 def _manual_owner_for_path(p: Path):

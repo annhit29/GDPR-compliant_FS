@@ -51,6 +51,11 @@ observable event SpecialConsent
     p : purpose
     spCat : special_data_category
 
+#observable event RevokeSpecialConsent
+#    exUid : user_id
+#    p : purpose
+#    spCat : special_data_category
+
 observable event RequestAccess
   exUid : user_id
 
@@ -230,10 +235,9 @@ assume true EnsuresAppropriateSecurity
 #art6.1.a
 rule "r_GiveConsent"
     whenever
-        Consent(ds, p) OR (EXISTS spCat. SpecialConsent(ds, p, spCat))
+        Consent(ds, p)
     refine
         GiveConsent(ds, p, "GDPRFS")
-
 # Consent event refines to GiveConsent event. i.e. Consent replaces GiveConsent event.
 
 #art6.1.b
@@ -300,6 +304,7 @@ rule "r_IsSpecialData"
 #para2a
 rule "r_GiveSpecialConsent"
     whenever
+        #NOT RevokeSpecialConsent(ds, p, spCat) SINCE 
         SpecialConsent(ds, p, spCat)
     refine
         GiveSpecialConsent(ds, p, "GDPRFS", spCat)
@@ -415,6 +420,7 @@ assume false HasCategory
     """No data categories are tracked by this FileSystem."""
 
 #IsCategory unrefined
+# create Category event, then refine IsCategory event
 
 assume false HasIntendedRecipient
     """todo: no recipient??, sinon cf en bas"""

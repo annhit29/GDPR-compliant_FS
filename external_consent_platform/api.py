@@ -27,7 +27,7 @@ def ack_event(event_id):
 
 @bp.route("/consents/<uid>/<purpose>", methods=["GET"])
 def get_consent(uid, purpose):
-    row = CurrentEventState.query.filter_by(uid=uid, purpose=purpose).one_or_none()
+    row = CurrentEventState.query.filter_by(uid=uid, purpose=purpose, category="consent").one_or_none()
     if not row:
         return jsonify({"uid": uid, "purpose": purpose, "status": "unknown"})
     return jsonify(row.as_dict())

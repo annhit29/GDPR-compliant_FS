@@ -412,10 +412,23 @@ def events_for_read_or_skip(path):
 
     return events_for_read(path)
 
+def events_for_write_or_skip(path):
+    """Skip automatic Write event logging for temp files and for files that need
+    consent pre-checks (handled in _write / rename instead)."""
+    base = os.path.basename(str(path).lower())
+
+    # Temp files: Write event is emitted later at rename (temp → real)
+    if _is_temp_name(path):
+        return []
+
+    # For all non-temp files: skip automatic logging here.
+    # The write() body and rename() gate handle consent checks + event emission.
+    return []
+
 pep = PEP(
     mapping={
         ('MyFS', 'read'): Functional('Use', lambda path, *a, **kw: events_for_read_or_skip(path)),
-        ('MyFS', 'write'): Functional('Write', lambda path, *a, **kw: events_for_path(path, 'Write')),
+        ('MyFS', 'write'): Functional('Write', lambda path, *a, **kw: events_for_write_or_skip(path)),
     },
     suppression_handlers=suppression_handlers,
     causation_handlers=causation_handlers#,
@@ -562,7 +575,27 @@ class MyFS(Fuse):
 
         # Ensure the parent folder exists
         _ensure_parent(p)
-    
+
+        # GDPR pre-check: block writes to non-temp files if consent is missing
+        if not _is_temp_name(path):
+            _, uids = _get_file_and_user(p)
+            if uids:
+                # Art 6: check regular consent
+                for uid in uids:
+                    if not _check_consent(uid, _current_session_purpose):
+                        print(f"[GDPR] Blocking write to {path}: {uid} has no consent")
+                        raise OSError(EACCES, "GDPR policy: write requires consent")
+                # Art 9: check special consent for files with special data categories
+                with Session() as s:
+                    f_obj = s.query(File).filter(File.abs_path == str(p.resolve())).first()
+                    if f_obj and f_obj.special_categories:
+                        cats = [c.strip() for c in f_obj.special_categories.split(",") if c.strip()]
+                        for cat in cats:
+                            for uid in uids:
+                                if not _check_special_consent(uid, cat):
+                                    print(f"[GDPR Art9] Blocking write to {path}: {uid} lacks special consent for '{cat}'")
+                                    raise OSError(EACCES, f"GDPR Art 9: write requires special consent for '{cat}'")
+
         # Write to the real upper file
         with open(p, "r+b" if p.exists() else "wb") as f:
             f.seek(offset)
@@ -605,8 +638,11 @@ class MyFS(Fuse):
             events = [Event('Write', fid, _current_session_purpose)]
             # Co-emit SpecialData in the same logger.log() call (MFOTL timing requirement)
             events.extend(_special_data_events(fid, _upper(path), uids))
-            logger.log(events, threading.Event(), False)
-            print(f"[GDPR] Fallback Write event emitted for {path}")
+            cau, sup, _, _ = logger.log(events, threading.Event(), False)
+            if sup:
+                print(f"[GDPR] Write event for {path} was SUPPRESSED by enforcer")
+            else:
+                print(f"[GDPR] Write event emitted for {path}")
         except Exception as e:
             print(f"[GDPR] Warning: failed to emit Write event for {path}: {e}")
 
@@ -668,6 +704,34 @@ class MyFS(Fuse):
                 writer.add_page(page)
                 continue
 
+            # Pre-check: if any data subject lacks consent, redact without logging
+            skip_page = False
+            for uid in uids:
+                if not _check_consent(uid, _current_session_purpose):
+                    print(f"[GDPR] {uid} has no consent → redacting page {idx} (no Use event logged)")
+                    skip_page = True
+                    break
+            if not skip_page:
+                # Pre-check Art 9
+                with Session() as s:
+                    f_obj = s.query(File).filter(File.abs_path == str(Path(abspath).resolve())).first()
+                    if f_obj and f_obj.special_categories:
+                        cats = [c.strip() for c in f_obj.special_categories.split(",") if c.strip()]
+                        for cat in cats:
+                            for uid in uids:
+                                if not _check_special_consent(uid, cat):
+                                    print(f"[GDPR Art9] {uid} lacks special consent for '{cat}' → redacting page {idx}")
+                                    skip_page = True
+                                    break
+                            if skip_page:
+                                break
+
+            if skip_page:
+                red_page = self._make_redacted_page()
+                red_reader = PdfReader(BytesIO(red_page))
+                writer.add_page(red_reader.pages[0])
+                continue
+
             events = [Event("Use", page_fid, uid) for uid in uids]
             events.extend(_special_data_events(page_fid, abspath, uids))
 
@@ -675,7 +739,6 @@ class MyFS(Fuse):
 
             if sup:
                 print(f"[GDPR] Page {idx} suppressed → inserting blank page")
-                # writer.add_blank_page(width=595, height=842)
                 red_page = self._make_redacted_page()
                 red_reader = PdfReader(BytesIO(red_page))
                 writer.add_page(red_reader.pages[0])
@@ -878,6 +941,25 @@ class MyFS(Fuse):
                 update_file_metadata(str(p.resolve()), "read")
                 return chunk
 
+            # Pre-check: if any data subject lacks consent, return REDACTED without logging
+            for uid in uids:
+                if not _check_consent(uid, _current_session_purpose):
+                    print(f"[GDPR] {uid} has no consent → REDACTED (no Use event logged)")
+                    red = b"REDACTED"
+                    return red[offset: offset + size]
+
+            # Pre-check Art 9: if file has special categories and any uid lacks special consent
+            with Session() as s:
+                f = s.query(File).filter(File.abs_path == str(p.resolve())).first()
+                if f and f.special_categories:
+                    cats = [c.strip() for c in f.special_categories.split(",") if c.strip()]
+                    for cat in cats:
+                        for uid in uids:
+                            if not _check_special_consent(uid, cat):
+                                print(f"[GDPR Art9] {uid} lacks special consent for '{cat}' → REDACTED (no Use event logged)")
+                                red = b"REDACTED"
+                                return red[offset: offset + size]
+
             # Build Use events for all uids
             events = [Event("Use", fid, uid) for uid in uids]
             events.extend(_special_data_events(fid, p, uids))
@@ -976,8 +1058,24 @@ class MyFS(Fuse):
 
             rows = reader # all rows, including header
 
-            # Pre-check: if any file-level uid has revoked consent, redact all rows without logging
+            # Pre-check Art 6: if any file-level uid has revoked consent, redact all rows without logging
             all_consented = all(_check_consent(uid, _current_session_purpose) for uid in file_level_uids) if file_level_uids else True
+
+            # Pre-check Art 9: if file has special categories and any uid lacks special consent
+            art9_blocked = False
+            if all_consented and file_level_uids:
+                with Session() as s:
+                    f_obj = s.query(File).filter(File.abs_path == str(p.resolve())).first()
+                    if f_obj and f_obj.special_categories:
+                        cats = [c.strip() for c in f_obj.special_categories.split(",") if c.strip()]
+                        for cat in cats:
+                            for uid in file_level_uids:
+                                if not _check_special_consent(uid, cat):
+                                    print(f"[GDPR Art9] {uid} lacks special consent for '{cat}' → redacting CSV")
+                                    art9_blocked = True
+                                    break
+                            if art9_blocked:
+                                break
 
             # Skip per-row Use events if a save is in progress (read during save workflow)
             save_in_progress = os.path.dirname(path) in _save_in_progress_dirs
@@ -988,8 +1086,8 @@ class MyFS(Fuse):
                     output.append(row)  # no owner → no enforcement needed
                     continue
 
-                if not all_consented:
-                    print(f"[CSV] Row {idx}: consent revoked — redacting without logging")
+                if not all_consented or art9_blocked:
+                    print(f"[CSV] Row {idx}: consent missing — redacting without logging")
                     output.append(["REDACTED"] * len(row))
                     continue
 
@@ -1084,10 +1182,21 @@ class MyFS(Fuse):
         # temp → real file pattern (gedit .goutputstream-*, LibreOffice .tmp, etc.)
         if _is_temp_name(old) and not _is_temp_name(new):
             _, uids = _get_file_and_user(_upper(new))
+            # Art 6: check regular consent for all data subjects
             all_consented = all(_check_consent(uid, _current_session_purpose) for uid in uids) if uids else True
             if not all_consented:
                 print(f"[GDPR] Blocking final save for {new} due to missing consent")
                 raise OSError(EACCES, "GDPR policy: write requires external consent")
+            # Art 9: check special consent for files with special data categories
+            with Session() as s:
+                f = s.query(File).filter(File.abs_path == str(new_p.resolve())).first()
+                if f and f.special_categories and uids:
+                    cats = [c.strip() for c in f.special_categories.split(",") if c.strip()]
+                    for cat in cats:
+                        for uid in uids:
+                            if not _check_special_consent(uid, cat):
+                                print(f"[GDPR Art9] Blocking final save for {new}: {uid} lacks special consent for '{cat}'")
+                                raise OSError(EACCES, f"GDPR Art 9: write requires special consent for '{cat}'")
         # ------------------------------------------------------
 
 
