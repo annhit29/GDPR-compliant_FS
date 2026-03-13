@@ -9,6 +9,7 @@ RequestAccess(exUid: string)
 RequestErasure(exUid: string)
 RequestResponse(ds: string, rq: string, rs: string)+
 Revoke(exUid: string, p: string)
+RevokeSpecialConsent(exUid: string, p: string, spCat: string)
 SpecialConsent(exUid: string, p: string, spCat: string)
 SpecialData(fid: string, spCat: string)
 StartSession(inUid: string, p: string, reason: string)
