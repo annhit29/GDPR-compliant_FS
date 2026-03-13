@@ -931,9 +931,11 @@ class MyFS(Fuse):
             fid, uids = _get_file_and_user(_upper(path))
             fid = fid or os.path.basename(path)
 
-            # If no PII → normal read
+            # If no PII → normal read, but log UseNonPII
             if not uids:
                 print("[TXT] No personal data → returning normal content")
+                actor = getpass.getuser()
+                logger.log([Event("UseNonPII", fid, actor)], threading.Event(), False)
                 with open(p, "rb") as f:
                     f.seek(offset)
                     chunk = f.read(size)
