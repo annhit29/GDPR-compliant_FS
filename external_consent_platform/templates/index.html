@@ -39,7 +39,22 @@
     {# Create one shared input for each unique field used across all events #}
     {% for field in all_fields %}
       {% if field != 'uid' %}
-        <input name="{{ field }}" placeholder="{{ field|capitalize }}">
+      {% if field|lower == 'spcat' %}
+      <label>Special Category</label>
+      <select name="spcat">
+        <option value="">-- Select Special Category --</option>
+        <option value="health">Health</option>
+        <option value="racial_ethnic">Racial / Ethnic</option>
+        <option value="political">Political</option>
+        <option value="religious">Religious</option>
+        <option value="trade_union">Trade Union</option>
+        <option value="genetic">Genetic</option>
+        <option value="biometric">Biometric</option>
+        <option value="sex_life">Sex Life</option>
+      </select>
+    {% else %}
+      <input name="{{ field }}" placeholder="{{ field|capitalize }}">
+    {% endif %}
       {% endif %}
     {% endfor %}
 
@@ -51,9 +66,9 @@
 
   <h3>Recent Events</h3>
   <table>
-    <tr><th>Kind</th><th>User full name</th><th>Purpose</th><th>Status</th></tr>
+    <tr><th>Kind</th><th>User full name</th><th>Purpose</th><th>Special Category</th><th>Status</th></tr>
     {% for e in events %}
-    <tr><td>{{ e.kind }}</td><td>{{ e.uid }}</td><td>{{ e.purpose }}</td><td>{{ e.status }}</td></tr>
+    <tr><td>{{ e.kind }}</td><td>{{ e.uid }}</td><td>{{ e.purpose }}</td><td>{{ e.spCat or '' }}</td><td>{{ e.status }}</td></tr>
     {% endfor %}
   </table>
 
@@ -65,12 +80,14 @@
     <tr>
       <th>User full name</th>
       {% if has_purpose %}<th>Purpose</th>{% endif %}
+      {% if category == 'special_consent' %}<th>Special Category</th>{% endif %}
       <th>Status</th>
     </tr>
     {% for s in group %}
       <tr>
         <td>{{ s.uid }}</td>
         {% if has_purpose %}<td>{{ s.purpose }}</td>{% endif %}
+        {% if category == 'special_consent' %}<td>{{ s.spCat or '' }}</td>{% endif %}
         <td>{{ s.status }}</td>
       </tr>
     {% endfor %}

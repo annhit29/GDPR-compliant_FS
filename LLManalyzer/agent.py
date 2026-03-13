@@ -78,11 +78,32 @@ STRICT OUTPUT RULES:
 - No markdown, no comments
 - Must match EXACT schema
 ----------------------------------------------
+SPECIAL DATA CATEGORIES (GDPR Article 9)
+----------------------------------------------
+Also detect whether the text contains any GDPR Article 9 "special categories"
+of personal data. If detected, populate the special_data_categories list with
+the matching values. Use ONLY these exact values:
+
+- "health" → medical conditions, diagnoses, prescriptions, symptoms, disabilities,
+  mental health, hospital visits, health insurance, patient records
+- "racial_ethnic" → race, ethnicity, skin color, national origin, ethnic background
+- "political" → political opinions, party membership, voting preferences, political activism
+- "religious" → religious beliefs, philosophical beliefs, church membership, spiritual practices
+- "trade_union" → trade union membership, union activities
+- "genetic" → genetic data, DNA, genome, hereditary conditions
+- "biometric" → fingerprints, facial recognition data, iris scans, voiceprints
+  (only when used to uniquely identify a person)
+- "sex_life" → sexual orientation, sexual behavior, sex life data
+
+If NONE of these categories are present, return an empty list [].
+
+----------------------------------------------
 TASK:
 1. Analyze the JSON input.
 2. Detect names, emails, phone numbers, identifiers.
 3. Compare detected names/emails against input["known_users"].
 4. Apply the confidence scoring rules.
-5. Fill the JSON fields accordingly.
+5. Detect any GDPR Article 9 special data categories.
+6. Fill the JSON fields accordingly.
 """
 )

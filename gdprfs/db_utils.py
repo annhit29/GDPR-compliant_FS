@@ -1,3 +1,4 @@
+from ast import pattern
 from pathlib import Path
 from gdprfs.models import Person, File, Session
 from datetime import datetime
@@ -7,9 +8,38 @@ from docx import Document
 from odf.opendocument import load as load_odt
 from odf.text import P
 import pandas as pd
+from fnmatch import fnmatch
+
+GDPROWNER_PATH = Path("/var/lib/gdprfs/.gdprowner")
+
+def load_gdprowner():
+    """
+    Parse lines like:
+       jdoe: doe/**
+       aturing: research/*
+    Returns a list of (uid, pattern)
+    """
+    rules = []
+    if GDPROWNER_PATH.exists():
+        for line in GDPROWNER_PATH.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if ":" not in line:
+                continue
+            uid, pattern = line.split(":", 1)
+            rules.append( (uid.strip(), pattern.strip()) )
+    return rules
+
+GDPROWNER_RULES = load_gdprowner()# global cache. This is loaded only once at startup of the FUSE daemon.
+print(f"[INIT] Loaded gdprowner rules: {GDPROWNER_RULES}") # [INIT] Loaded gdprowner rules: [('jdoe', 'doe/**')]
+
+# def reload_gdprignore():
+#     """Update the global variable in-place, so every function using GDPRIGNORE_PATTERNS automatically sees the updated patterns."""
+#     global GDPRIGNORE_PATTERNS
+#     GDPRIGNORE_PATTERNS = load_gdprignore()
 
 def _is_temp_name(fuse_path: str) -> bool:
-    # print("in _is_temp_name")
     """Detect temporary filenames created by editors (e.g., gedit)."""
     name = os.path.basename(fuse_path)
     return (
@@ -18,12 +48,53 @@ def _is_temp_name(fuse_path: str) -> bool:
         or name.startswith(".#")
         or name.endswith(".swp")
 
-        #todo 10h11: testing
         or name.startswith("~$") # MS Office temporary file
         or name.startswith(".~lock") # LibreOffice lock file
         or name.endswith(".tmp") # generic temp
         or name.endswith(".csv#") # LibreOffice temp variant
     )
+
+def _manual_owner_for_path(p: Path):
+    rel = str(p).replace("/var/lib/gdprfs/upper/", "")
+    for uid, pattern in GDPROWNER_RULES:
+        if fnmatch(rel, pattern):
+            return uid
+    return None
+
+def _uids_from_path_string(path_str: str, session):
+    """
+    Infer personal data purely from the *path* (filename + folders).
+    Returns a list of Person objects.
+    """
+    path_lc = path_str.lower()
+    persons = []
+
+    for person in session.query(Person).all():
+        first = (person.first_name or "").strip().lower()
+        last  = (person.last_name  or "").strip().lower()
+        full = f"{first} {last}".strip()
+
+        if not first and not last:
+            continue
+
+        # Match full name, or first, or last, in path
+        if full and full in path_lc:
+            persons.append(person)
+        elif first and first in path_lc:
+            persons.append(person)
+        elif last and last in path_lc:
+            persons.append(person)
+
+    return persons
+
+def _uids_from_folder(p: Path, session):
+    """This checks only the folder name (not the full path)."""
+    folder = p.parent.name.lower()
+    return _uids_from_path_string(folder, session)
+
+def _uids_from_filename(p: Path, session):
+    """This checks only the filename, not folders."""
+    return _uids_from_path_string(p.name.lower(), session)
 
 def _extract_pdf_to_text(abs_path: str) -> str:
     """
@@ -124,13 +195,6 @@ def _get_text_for_matching(p: Path) -> str | None:
     print("[DB][EXTRACT] Unsupported file type → returning None")
     return None
 
-
-# def _read_text_safe(p: Path) -> str | None:
-#     try:
-#         return p.read_text(encoding="utf-8", errors="ignore")
-#     except Exception:
-#         return None  # for binary file or unreadable, return None, not ""
-
 def rescan_all_upper_files():
     """Rescan all files in /upper to (re)create missing mappings."""
     upper_dir = Path("/var/lib/gdprfs/upper")
@@ -184,34 +248,75 @@ def mark_file_deleted(file_path: str):
 
 def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", old_name: str = None):
     """
-    1. Reads the file contents (in /upper),
-    2. Checks if a `username` (first_name + last_name OR either one) appears,
-    3. Creates/updates the Person ↔ File mapping if so.
+    Update the database mapping for a file in /upper, based on its path and content.
+    Steps:
+    1. Manual owner override by internal person (gdprowner)
+    2. Folder-level ownership
+    3. Filename-level ownership
+    4. Content-based ownership inference
     """
 
-    # ignore temp files
+    # 0. Ignore temporary editor files
     if _is_temp_name(abs_upper_path):
         print(f"[DB] Ignoring temporary file {abs_upper_path}")
         return
 
     p = Path(abs_upper_path)
+    file_id = p.name
+
+    # 1. Manual owner override by internal person (gdprowner)
+    owner_uid = _manual_owner_for_path(p)
+    if owner_uid:
+        # avoid os.stat() crash if file does not exist
+        if not p.exists():
+            print(f"[GDPROWNER] Path matched rule but file missing: {p}")
+            return
+
+        with Session() as session:
+            print(f"[GDPROWNER] Manual override by internal person, in path {p}: assigning {file_id} → {owner_uid} (skips folder/filename/content)")
+
+            f = session.query(File).filter_by(file_id=file_id).first()
+
+            # ensure File exists
+            if not f:
+                stat = os.stat(p)
+                created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
+                modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                accessed = datetime.fromtimestamp(stat.st_atime).strftime("%Y-%m-%d %H:%M:%S")
+
+                f = File(
+                    file_id=file_id,
+                    abs_path=str(p.resolve()),
+                    created_at=created,
+                    modified_at=modified,
+                    accessed_at=accessed,
+                    last_action=context
+                )
+                session.add(f)
+
+            # assign manual owner
+            owner = session.query(Person).filter_by(uid=owner_uid).first()
+            if owner and f not in owner.files:
+                owner.files.append(f)
+
+            session.commit()
+            print(f"[GDPROWNER] DONE: {file_id} is now owned by Person(uid='{owner_uid}') (manual override by internal person in path {p})")
+
+        return  # STOP here (manual override wins)
+
+    # If file does not exist → nothing to do
     if not p.exists() or not p.is_file():
         return
 
-    content = _get_text_for_matching(p) #_read_text_safe(p)
-    if content is None: # binary or unreadable file; but allow empty text files to still be registered in DB
-        return
-    
+    # Normal DB logic
     stat = os.stat(p)
     created = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
     modified = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
     accessed = datetime.fromtimestamp(stat.st_atime).strftime("%Y-%m-%d %H:%M:%S")
-        
-    file_id = p.name # we map on the file name (simple prototype)
 
     with Session() as session:
-        # 1) Ensure File entry exists:
-        # f = session.query(File).filter_by(file_id=file_id).first()
+
+        # Ensure file entry exists
         f = None
         if context == "rename" and old_name:
             f = session.query(File).filter_by(file_id=old_name).first()
@@ -219,6 +324,7 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
                 print(f"[DB] Detected rename {old_name} → {file_id}")
                 f.file_id = file_id
                 f.abs_path = str(p.resolve())
+        
         if not f:
             f = session.query(File).filter_by(file_id=file_id).first()
 
@@ -238,7 +344,38 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
             f.modified_at = modified
             f.accessed_at = accessed
             f.last_action = context
-        
+
+        # 2. Folder-level ownership
+        folder_persons = _uids_from_folder(p, session)
+        if folder_persons:
+            for person in folder_persons:
+                if f not in person.files:
+                    person.files.append(f)
+                    print(f"[lazy DB folder] Linked (folder) {person.first_name} {person.last_name} ↔ {file_id}")
+
+            # IMPORTANT: stop here: coz no need to analyze contents, coz path reveals PII
+            session.commit()
+            print(f"[lazy DB folder] Finished mapping for folder `{p.parent.name}` ({person.uid} ↔ {file_id}, context={context}), folder-based only")
+            return   # <--- STRONG INHERITANCE: STOP HERE
+
+        # 3. Filename-level ownership
+        filename_persons = _uids_from_filename(p, session)
+        if filename_persons:
+            for person in filename_persons:
+                if f not in person.files:
+                    person.files.append(f)
+                    print(f"[DB filename] Linked (filename) {person.first_name} {person.last_name} ↔ {file_id}")
+            
+            # IMPORTANT: stop here: coz no need to analyze contents, coz path reveals PII
+            session.commit()
+            print(f"[DB filename] Finished mapping for {file_id} (context={context}), filename-based only")
+            return   # <--- STRONG INHERITANCE: STOP HERE
+
+        # 4. fallback: infer PII from file content (only if folder+filename gave nothing)
+        content = _get_text_for_matching(p)
+        if content is None: # binary or unreadable file; but allow empty text files to still be registered in DB
+            return
+
         if content.strip():
             # 2) Loop over known users (Person):
             people = session.query(Person).all()
@@ -257,11 +394,10 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
                 if full in lc or first in lc or last in lc:
                     if f not in person.files:
                         person.files.append(f)
-                        print(f"[DB] Linked {person.first_name} {person.last_name} ↔ {file_id}")
+                        print(f"[DB file content] Linked {person.first_name} {person.last_name} ↔ {file_id}")
 
         session.commit()
-        print(f"[DB] Updated mapping for {file_id} (context={context})")
-
+        print(f"[DB file content] Updated mapping for {file_id} (context={context}, content-based)")
 
 def sync_users_from_external():
     """

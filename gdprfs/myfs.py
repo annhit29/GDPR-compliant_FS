@@ -1,3 +1,4 @@
+import requests
 from errno import EACCES
 import getpass
 import threading
@@ -5,6 +6,8 @@ from fuse import Fuse
 import fuse
 fuse.fuse_python_api = (0, 2) 
 
+import csv
+from io import StringIO, BytesIO
 from gdprfs.llm import run_llm_analysis_and_update_db
 from gdprfs.settings import INSTRLIB_EXE, INSTRLIB_FORMULA, INSTRLIB_LOG, INSTRLIB_SIG
 from instrlib.instrument import Instrument
@@ -22,12 +25,14 @@ import json
 import subprocess # so the poller runs independently of the FUSE main loop, i.e. one daemon for FUSE, one daemon for poller
 from pypdf import PdfReader, PdfWriter
 from io import BytesIO
+from fuse import Stat
+from errno import ENOENT
 
 PDF_CACHE = {}
 REDACTED_TEMPLATE = Path("/var/lib/gdprfs/redacted_template.pdf")
+_current_session_purpose = "marketing"  # updated by StartSession/StopSession
+_save_in_progress_dirs = set()  # directories where a temp→real save is in progress
 # todo: 0) d'autres formats de fichiers <- redacted qd lecture mm pour les txt (suppression handler)
-# 1) filename dit qqch aussi
-# 2) folder-level <- soit on lit le nom du dossier, soit on declare explicitement le PII (cf 3))
 # 3) declarer manuellement le PII (dans le internal interface, par l'utilisateur interne) <- inspiration: .gitignore
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
@@ -91,11 +96,28 @@ def _delete_from_mirror(fuse_path: str):
     if dst.exists():
         dst.unlink()
 
+def _check_consent(uid: str, purpose: str) -> bool:
+    """Return True if uid has active consent for purpose, False if revoked."""
+    try:
+        res = requests.get(f"http://127.0.0.1:5000/api/consents/{uid}/{purpose}", timeout=1)
+        data = res.json()
+        return data.get("status") == "consented"
+    except Exception:
+        return True  # fail-open: assume consent if platform unreachable
+
+def _check_special_consent(uid: str, spCat: str) -> bool:
+    """Return True if uid has active special consent for the given Art 9 category."""
+    try:
+        res = requests.get(f"http://127.0.0.1:5000/api/consents/special/{uid}/{spCat}", timeout=1)
+        data = res.json()
+        return data.get("status") == "special_consented"
+    except Exception:
+        return True  # fail-open: assume consent if platform unreachable
+
 def replay_from_consent_db(logger):
     """
     On startup, all active events are re-injected into the enforcer, so that the enforcer has the latest event states.
     """
-    import requests
     BASE_URL = "http://127.0.0.1:5000"
     CONFIG_PATH = "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform/event_config.yaml"
 
@@ -123,7 +145,11 @@ def replay_from_consent_db(logger):
 
             expected_nb_args = len(schema.mapping.get(ev_name, [])) # number of args expected for an event (triggered by data subjects) to take (2 for Consent/Revoke, 1 for RequestAccess/RequestErasure)
 
-            if expected_nb_args == 2: # if event has 2 args (e.g. Consent, Revoke)
+            if ev_name == "SpecialConsent":
+                # SpecialConsent has 3 args: (uid, purpose, spCat)
+                spCat = row.get("spCat", "")
+                evt = Event(ev_name, uid, purpose, spCat)
+            elif expected_nb_args == 2: # if event has 2 args (e.g. Consent, Revoke)
                 evt = Event(ev_name, uid, purpose)
             else:
                 evt = Event(ev_name, uid) # it's 1 arg (e.g. RequestAccess, RequestErasure)
@@ -182,9 +208,6 @@ def _get_file_and_user(path: str):
         
         uids = []
         for person in file_obj.people:
-            # print(f"[DEBUG] Linked Person: uid={person.uid}, first={person.first_name}, last={person.last_name}")
-            # if person and person.uid: # if person exists and has a uid
-            #     uids.append(person.uid)
             if person.uid:
                 uids.append(person.uid)
             else:
@@ -194,27 +217,26 @@ def _get_file_and_user(path: str):
                 uid = first[:1] + last if first or last else "anonymous"
                 uids.append(uid)
 
-        # print(f"[DEBUG] Returning from _get_file_and_user: fid={file_obj.file_id}, uids={uids}")
         return file_obj.file_id, uids
 
 
 def events_for_path(path: str, event_type: str):
     """
     Return a list of Event objects (possibly multiple if file has several owners).
-    event_type ∈ {'Use', 'Collect', 'Delete'}
+    event_type ∈ {'Use', 'Write', 'Delete'}
     """
     fid, uid = _get_file_and_user(_upper(path))
     # Skip temporary names
     if _is_temp_name(path):
-        return [Event('Collect', 'tempfile', 'marketing')]
+        return [Event('Write', 'tempfile', _current_session_purpose)]
     if not fid:
         fid = f"unknown-{os.path.basename(path)}"
     if not uid:
         uid = "anonymous"
     if event_type == 'Use':
         return [Event('Use', fid, uid)]
-    elif event_type == 'Collect':
-        return [Event('Collect', fid, 'marketing')]
+    elif event_type == 'Write':
+        return [Event('Write', fid, _current_session_purpose)]
     elif event_type == 'Delete':
         return [Event('Delete', fid)]
     else:
@@ -225,23 +247,28 @@ def events_for_read(path):
     """Return appropriate events for read(), skip .goutputstream temporary files."""
     base = os.path.basename(path)
 
-    # if _should_ignore():
-    #     print(f"[DEBUG] Ignoring read from system process for {base}")
-    #     return []
     # Case 1: temporary gedit files (.goutputstream-XXXX)
     if base.startswith(".goutputstream-"):
-        # print(f"[DEBUG] Skipping Collect for temporary file: {path}")
-        return []  # No event, coz final Collect will be emitted at rename()
+        return []  # No event, coz final Write will be emitted at rename()
+
+    # Sanitize LibreOffice lock files: .~lock.fhublet.csv# → fhublet.csv
+    real_base = base
+    if base.startswith(".~lock.") and base.endswith("#"):
+        real_base = base[len(".~lock."):-len("#")]
+
+    # For lock files, look up the real file instead
+    lookup_path = _upper(path)
+    if real_base != base:
+        lookup_path = _upper(path).parent / real_base
 
     # Case 2: normal file read → Use(fid, purpose, uid)
-    fid, uids = _get_file_and_user(_upper(path))
-    fid = fid or f"unknown-{base}"
+    fid, uids = _get_file_and_user(lookup_path)
+    fid = fid or real_base
+    print("fid line244 is: ", fid)
 
     events = []
     with Session() as session:
-        file_obj = session.query(File).filter(File.abs_path == str(_upper(path).resolve())).first()
-        # print(f'{file_obj=}')
-        # print(f'{file_obj.people=}')
+        file_obj = session.query(File).filter(File.abs_path == str(lookup_path.resolve())).first()
 
         # Case 1: No personal data linked → free access, but still log as "nonpersonal"
         if not file_obj or not file_obj.people:
@@ -264,14 +291,52 @@ def events_for_read(path):
             # events.append(Event("Use", fid, "marketing", uid))
 
     print(f"[GDPR] Emitting {len(events)} Use events for {fid}: {[e.args for e in events]}")
+
+    # Co-emit SpecialData events if this file has Art 9 special categories in DB
+    events.extend(_special_data_events(fid, lookup_path, uids))
+
     return events
+
+
+def _special_data_events(fid, abs_path, uids=None):
+    """Return SpecialData(fid, cat) events for a file if DB has Art 9 special categories
+    AND at least one linked data subject has NOT given special consent for that category.
+
+    Due to a quantifier bug in the MFOTL Art 9 constraint (∃p.¬Exception22 instead of
+    ¬∃p.Exception22), we handle Art 9 enforcement here: only co-emit SpecialData events
+    when special consent is missing, so the enforcer correctly suppresses the Use/Write.
+    When special consent exists, we skip co-emission (Art 9 exception 9(2)(a) is satisfied)."""
+    with Session() as s:
+        f = s.query(File).filter(File.abs_path == str(Path(abs_path).resolve())).first()
+        if not f or not f.special_categories:
+            return []
+        cats = [c.strip() for c in f.special_categories.split(",") if c.strip()]
+        if not cats:
+            return []
+        # For each category, check if ALL linked data subjects have special consent.
+        # Only co-emit SpecialData for categories where consent is missing (to trigger enforcer suppression).
+        uids = uids or []
+        unconsented_cats = []
+        for cat in cats:
+            for uid in uids:
+                if not _check_special_consent(uid, cat):
+                    unconsented_cats.append(cat)
+                    break  # one unconsented uid is enough
+        if not unconsented_cats:
+            print(f"[GDPR Art9] All data subjects have special consent for {cats} → skipping SpecialData co-emission")
+            return []
+        evts = [Event("SpecialData", fid, cat) for cat in unconsented_cats]
+        print(f"[GDPR Art9] Co-emitting {len(evts)} SpecialData events for {fid} (unconsented categories: {unconsented_cats})")
+        return evts
+
 
 # ========== SCHEMA ==========
 schema = Schema()
 schema.add("UseNonPII", [str, str]) # for reads of non-PII files
 schema.add('Use', [str, str]) # for reads
+schema.add('Write', [str, str]) # for writes
 schema.add('Delete', [str])    # for deletes
-schema.add('Collect', [str, str]) # for writes
+schema.add('Collect', [str, str]) # for collection events
 
 schema.add('StartSession', [str, str, str])
 schema.add('StopSession', [str])
@@ -281,7 +346,19 @@ schema.add('Revoke', [str, str]) # for revoke consent events
 schema.add('RequestAccess', [str]) # request all DS data events from the FS
 schema.add('RequestErasure', [str]) # request erasure of all DS data events in the FS
 
+schema.add('RequestResponse', [str, str, str])
+schema.add('Contains', [str, str])
 
+#for art9
+schema.add('Rectify', [str, str]) # for rectification events
+schema.add('SpecialConsent', [str, str, str]) # for special category data consent (uid, purpose, spCat)
+schema.add('SpecialData', [str, str]) # for special category data (file_id, spCat)
+
+#for art13 and art15
+schema.add('IsCategory', [str, str])
+
+#for art30
+schema.add('Record', [str, str, str, str, str]) # for recording an event in the data subject's record
 
 # ========== HANDLERS ==========
 def none_handler(event_name, event_args, response, *args, **kwargs):
@@ -292,59 +369,60 @@ def none_handler(event_name, event_args, response, *args, **kwargs):
     """
     return None
 
-suppression_handlers = {('Use'): none_handler}
-
-causation_handlers = {('UseNonPII'): none_handler,
-                        ('Delete'): none_handler,
-                        ('Collect'): none_handler,
-                      ('Consent'): none_handler,
-                        ('Revoke'): none_handler,
-                        ('RequestAccess'): none_handler,
-                        ('RequestErasure'): none_handler
-                      }
+suppression_handlers = {('Use'): none_handler, ('Write'): none_handler}
+causation_handlers = {
+    ('Delete'): none_handler,
+    ('IsCategory'): none_handler,
+    ('RequestResponse'): none_handler,  # enforcer handles Art 15 response
+    ('Contains'): none_handler,          # enforcer handles response content
+    ('Rectify'): none_handler,           # enforcer handles rectification
+    ('Record'): none_handler,            # enforcer handles recording the event
+}
 
 # ========== MAPPINGS ==========
 def read_mapping(action):  
     print(f'[read_mapping DEBUG] {str(action)}')
     return Event('Use', str(action), 'userid1')
-# todo: or the following?
-# def read_mapping(action):
-    # print("[DEBUG InstrumentationMapping] remapping event", action)
-    # return Event('Use', str(action), 'analytics')  # different purpose!
 
-def write_mapping(action): return Event('Collect', str(action), 'marketing')
+def write_mapping(action): return Event('Write', str(action), _current_session_purpose)
 def unlink_mapping(action): return Event('Delete', str(action))
 
 instrumentation_mapping = InstrumentationMapping({
     'read': read_mapping,
     'write': write_mapping,
     'unlink': unlink_mapping
-    # 'Use': lambda x:x
 })
 
 # ========== PEP ==========
 def events_for_read_or_skip(path):
-    # If normal files => keep old behavior
-    if not str(path).lower().endswith(".pdf"):
-        return events_for_read(path)
-    # If PDF => skip full-file Use events
-    return []
+    lower = str(path).lower()
+    base = os.path.basename(lower)
+
+    # Skip temp files entirely (e.g. LibreOffice lu*.tmp)
+    if _is_temp_name(base):
+        return []
+
+    # Sanitize lock file name: .~lock.fhublet.csv# → fhublet.csv
+    if base.startswith(".~lock.") and base.endswith("#"):
+        base = base[len(".~lock."):-len("#")]
+
+    # Skip full-file events for formats with custom enforcement
+    if base.endswith(".pdf") or base.endswith(".txt") or base.endswith(".csv") or base.endswith(".odt"):
+        return []  # Use events emitted manually inside read()
+
+    return events_for_read(path)
 
 pep = PEP(
     mapping={
         ('MyFS', 'read'): Functional('Use', lambda path, *a, **kw: events_for_read_or_skip(path)),
-        ('MyFS', 'write'): Functional('Collect', lambda path, *a, **kw: events_for_path(path, 'Collect')),
-        # ('MyFS', 'unlink'): Functional('Delete', lambda path, *a, **kw: events_for_path(path, 'Delete')),
+        ('MyFS', 'write'): Functional('Write', lambda path, *a, **kw: events_for_path(path, 'Write')),
     },
     suppression_handlers=suppression_handlers,
     causation_handlers=causation_handlers#,
-    # instrumentation_mapping=instrumentation_mapping
-    # todo: francois said use suppression_handlers, causation_handlers, and instrumentation_mapping, then no need mapping?? see miniTwitter_rv/twitt/enforcer.py
 )
 
 pdp = EnfGuard(INSTRLIB_EXE, INSTRLIB_SIG, INSTRLIB_FORMULA, log_file=INSTRLIB_LOG)
 
-# logger = Logger(name="gdprfs")
 logger = Logger(pep, schema, pdp)
 print("PEP mapping keys:", list(logger.pep.mapping.keys()))
 
@@ -360,6 +438,7 @@ import json
 def start_ingest_server(logger):
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
+            global _current_session_purpose
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
@@ -382,13 +461,23 @@ def start_ingest_server(logger):
                         if not purpose or not reason:
                             self.send_error(400, "missing purpose or reason for StartSession")
                             return
+                        _current_session_purpose = purpose
                         evt = Event("StartSession", uid, purpose, reason)
 
                     # CASE 2: StopSession(uid)
                     elif kind == "StopSession":
+                        _current_session_purpose = "marketing"
                         evt = Event("StopSession", uid)
 
-                    # CASE 3: Consent/Revoke or others (already handled)
+                    # CASE 3: SpecialConsent(uid, purpose, spCat) — Art 9
+                    elif kind == "SpecialConsent":
+                        spCat = str(payload.get("spCat", "")).strip()
+                        if not purpose or not spCat:
+                            self.send_error(400, "missing purpose or spCat for SpecialConsent")
+                            return
+                        evt = Event("SpecialConsent", uid, purpose, spCat)
+
+                    # CASE 4: Consent/Revoke or others (already handled)
                     # Create a generic Event, supporting any kind
                     # If purpose missing, drop it automatically
                     elif purpose: # if purpose is provided && it's not the StopSession event
@@ -487,8 +576,6 @@ class MyFS(Fuse):
                 update_file_mapping_for_upper(str(p.resolve()), context="write")
                 update_file_metadata(str(p.resolve()), "write")
                 
-                # print("PRINT A COLLECT in _write")
-                # self._emit_collect_event(path) # solves the issue of no Collect event for direct writes ending with numbers
             except Exception as e:
                 print(f"[DB] Warn: mapping update failed for {p}: {e}")
         else:
@@ -510,16 +597,18 @@ class MyFS(Fuse):
 
         return len(data) # Returning len(data) tells FUSE “OK, I wrote everything.”
 
-    def _emit_collect_event(self, path: str):
-        """Emit a GDPR Collect event for a file when a write happens but no Collect event is triggered."""
+    def _emit_write_event(self, path: str):
+        """Emit a GDPR Write event for a file when a write happens but no Write event is triggered."""
         try:
-            fid, _ = _get_file_and_user(_upper(path))
+            fid, uids = _get_file_and_user(_upper(path))
             fid = fid or f"unknown-{os.path.basename(path)}"
-            evt = Event('Collect', fid, 'marketing')
-            logger.log([evt], threading.Event(), False)
-            print(f"[GDPR] Fallback Collect event emitted for {path}")
+            events = [Event('Write', fid, _current_session_purpose)]
+            # Co-emit SpecialData in the same logger.log() call (MFOTL timing requirement)
+            events.extend(_special_data_events(fid, _upper(path), uids))
+            logger.log(events, threading.Event(), False)
+            print(f"[GDPR] Fallback Write event emitted for {path}")
         except Exception as e:
-            print(f"[GDPR] Warning: failed to emit Collect event for {path}: {e}")
+            print(f"[GDPR] Warning: failed to emit Write event for {path}: {e}")
 
     def _make_redacted_page(self):
         """
@@ -580,6 +669,7 @@ class MyFS(Fuse):
                 continue
 
             events = [Event("Use", page_fid, uid) for uid in uids]
+            events.extend(_special_data_events(page_fid, abspath, uids))
 
             cau, sup, _, _ = logger.log(events, threading.Event(), False)
 
@@ -606,10 +696,6 @@ class MyFS(Fuse):
         (e.g. size, permissions, owner, timestamps)
         Called whenever Linux does 'ls', 'stat', etc.
         """
-        # print(f"[DEBUG getattr] called with path={path}", flush=True)
-
-        from fuse import Stat
-        from errno import ENOENT
 
         # Find the real file inside /upper
         real_path = _upper(path)
@@ -627,14 +713,22 @@ class MyFS(Fuse):
 
         # Fill the FUSE Stat structure
         st = Stat()
+
+        # Copy actual metadata
         st.st_mode  = s.st_mode      # file type + permissions
         st.st_nlink = s.st_nlink     # number of hard links
-        st.st_size = s.st_size      # file size in bytes
         st.st_uid   = s.st_uid       # owner user id (still needed for Linux)
         st.st_gid   = s.st_gid       # group id
         st.st_atime = int(s.st_atime)  # access time
         st.st_mtime = int(s.st_mtime)  # modification time
         st.st_ctime = int(s.st_ctime)  # change/creation time
+
+        # Default: real size
+        st.st_size = s.st_size      # file size in bytes
+
+        # For TXT files, make sure size is at least length of "REDACTED"
+        if real_path.suffix.lower() == ".txt":
+            st.st_size = max(st.st_size, len(b"REDACTED")) # len(b"REDACTED") = 8 bytes
 
         return st
 
@@ -652,12 +746,20 @@ class MyFS(Fuse):
         _ensure_parent(m)
         m.mkdir(exist_ok=True)
 
-        # Update DB
-        try:
-            update_file_mapping_for_upper(str(p.resolve()), context="mkdir")
-            update_file_metadata(str(p.resolve()), "mkdir")
-        except Exception as e:
-            print(f"[DB] Warning: mkdir mapping failed for {p}: {e}")
+        # ---- Folder-level inheritance detection (strong inheritance) ----
+        from gdprfs.db_utils import _uids_from_path_string
+        folder_name = p.name.lower()
+
+        with Session() as session:
+            owners = _uids_from_path_string(folder_name, session)
+
+            if owners:
+                for person in owners:
+                    print(f"[lazy DB folder] Folder '{folder_name}' recognized as belonging to {person.first_name} {person.last_name}")
+
+                print(f"[lazy DB folder] Folder-level inheritance activated (context=mkdir)")
+            else:
+                print(f"[lazy DB folder] No matching person for folder '{folder_name}'")
 
         return 0
 
@@ -725,7 +827,6 @@ class MyFS(Fuse):
         print("in open")
 
         # allow access if the path exists in /upper
-        # print(f"[DEBUG open] called with path={path}, flags={flags}", flush=True)
         p = _upper(path)
         if p.exists():
             # PDF cache invalidation
@@ -734,7 +835,6 @@ class MyFS(Fuse):
             update_file_mapping_for_upper(str(p.resolve()), context="open")
             update_file_metadata(str(p.resolve()), "open")
             return 0
-        from errno import ENOENT
         raise OSError(ENOENT, "No such file or directory")
 
     def read(self, path, size, offset, fh=None):
@@ -746,10 +846,9 @@ class MyFS(Fuse):
 
         p = _upper(path)
         if not p.is_file():
-            from errno import ENOENT
             raise OSError(ENOENT, "No such file or directory")
-        
-        # =========== CASE1: pdf with page-based Use event ===========
+    
+        # =========== Case1: pdf with page-based Use event ===========
         if str(p).lower().endswith(".pdf"):
             print("[PDF] Page-based enforcement for PDF read")
 
@@ -761,11 +860,172 @@ class MyFS(Fuse):
 
             return redacted_bytes[offset:offset + size]
 
-        # =========== CASE2: non-pdf files ===========        
+        # =========== Case2: TXT full-file enforcement ===========
+        if str(p).lower().endswith(".txt"):
+            print("[TXT] Full-file enforcement for TXT read")
+
+            # Determine file_id and data subjects
+            fid, uids = _get_file_and_user(_upper(path))
+            fid = fid or os.path.basename(path)
+
+            # If no PII → normal read
+            if not uids:
+                print("[TXT] No personal data → returning normal content")
+                with open(p, "rb") as f:
+                    f.seek(offset)
+                    chunk = f.read(size)
+                update_file_mapping_for_upper(str(p.resolve()), context="read")
+                update_file_metadata(str(p.resolve()), "read")
+                return chunk
+
+            # Build Use events for all uids
+            events = [Event("Use", fid, uid) for uid in uids]
+            events.extend(_special_data_events(fid, p, uids))
+
+            # Ask the enforcer whether reading should be suppressed
+            cau, sup, _, _ = logger.log(events, threading.Event(), False)
+
+            if sup:
+                print("[TXT] Suppressed → returning REDACTED")
+                red = b"REDACTED"
+                return red[offset: offset + size]  # respect offset+size like PDF/ODT
+
+            # Otherwise → allow full file text
+            with open(p, "rb") as f:
+                f.seek(offset)
+                chunk = f.read(size)
+
+            update_file_mapping_for_upper(str(p.resolve()), context="read")
+            update_file_metadata(str(p.resolve()), "read")
+
+            return chunk
+
+        # # =========== Case3: ODT paragraph-based enforcement ===========
+        # if str(p).lower().endswith(".odt"):
+        #     print("[ODT] Paragraph-based enforcement for ODT read")
+
+        #     from odf.opendocument import load as load_odt
+        #     from odf.opendocument import OpenDocumentText
+        #     from odf.text import P
+
+        #     # Load original document
+        #     doc = load_odt(str(p))
+        #     paragraphs = doc.getElementsByType(P) # todo: not P mais images, tableaux, alors il faut les ajouter aussi 
+
+        #     # Prepare new redacted document
+        #     new_doc = OpenDocumentText()
+
+        #     fid, _ = _get_file_and_user(_upper(path))
+        #     base_fid = fid or os.path.basename(path)
+
+        #     for idx, para in enumerate(paragraphs):
+        #         text = "".join(
+        #             n.data for n in para.childNodes if hasattr(n, "data")
+        #         ).strip()
+
+        #         # Determine involved UIDs for this paragraph
+        #         uids = []
+        #         for uid_candidate in _uids_from_page_text(text):
+        #             uids.append(uid_candidate)
+
+        #         # If no PII → copy paragraph as-is
+        #         if not uids:
+        #             new_para = P(text=text)
+        #             new_doc.text.addElement(new_para)
+        #             continue
+
+        #         # Build Use events for this paragraph
+        #         para_fid = f"{base_fid}/para-{idx}"
+        #         events = [Event("Use", para_fid, uid) for uid in uids]
+
+        #         cau, sup, _, _ = logger.log(events, threading.Event(), False)
+
+        #         if sup:
+        #             print(f"[ODT] Paragraph {idx} suppressed")
+        #             new_para = P(text="REDACTED")
+        #         else:
+        #             new_para = P(text=text)
+
+        #         new_doc.text.addElement(new_para)
+
+        #     # Serialize the new document into bytes
+        #     from io import BytesIO
+        #     buf = BytesIO()
+        #     new_doc.save(buf)
+        #     redacted_bytes = buf.getvalue()
+
+        #     # Still update DB metadata
+        #     update_file_mapping_for_upper(str(p.resolve()), context="read")
+        #     update_file_metadata(str(p.resolve()), "read")
+
+        #     return redacted_bytes[offset : offset + size]
+
+        # =========== Case4: CSV row-based enforcement ===========
+        # todo: fix the last characters should display
+        if str(p).lower().endswith(".csv"):
+            print("[CSV] Row-based enforcement for CSV read")
+
+            fid, file_level_uids = _get_file_and_user(_upper(path))
+            base_fid = fid or os.path.basename(path)
+
+            # Read original CSV as text
+            with open(p, "r", newline="", encoding="utf-8", errors="ignore") as f:
+                reader = list(csv.reader(f))
+
+            output = []
+
+            rows = reader # all rows, including header
+
+            # Pre-check: if any file-level uid has revoked consent, redact all rows without logging
+            all_consented = all(_check_consent(uid, _current_session_purpose) for uid in file_level_uids) if file_level_uids else True
+
+            # Skip per-row Use events if a save is in progress (read during save workflow)
+            save_in_progress = os.path.dirname(path) in _save_in_progress_dirs
+
+            for idx, row in enumerate(rows):
+                # Use file-level person mapping for enforcement
+                if not file_level_uids:
+                    output.append(row)  # no owner → no enforcement needed
+                    continue
+
+                if not all_consented:
+                    print(f"[CSV] Row {idx}: consent revoked — redacting without logging")
+                    output.append(["REDACTED"] * len(row))
+                    continue
+
+                if save_in_progress:
+                    output.append(row)  # no Use event during save workflow
+                    continue
+
+                # Normal read (viewing): emit per-row Use events
+                row_fid = f"{base_fid}/row-{idx}"
+                events = [Event("Use", row_fid, uid) for uid in file_level_uids]
+                events.extend(_special_data_events(row_fid, p, file_level_uids))
+
+                cau, sup, _, _ = logger.log(events, threading.Event(), False)
+
+                if sup:
+                    print(f"[CSV] Row {idx} suppressed")
+                    output.append(["REDACTED"] * len(row))
+                else:
+                    output.append(row)
+
+            # Serialize CSV back to bytes
+            buf = StringIO()
+            writer = csv.writer(buf)
+            writer.writerows(output)
+
+            csv_bytes = buf.getvalue().encode("utf-8")
+
+            update_file_mapping_for_upper(str(p.resolve()), context="read")
+            update_file_metadata(str(p.resolve()), "read")
+
+            return csv_bytes[offset : offset + size]
+
+        # =========== Case5: Fallback case: non-pdf and non-txt files ===========        
         # return only the requested slice, as bytes
         with open(p, "rb") as f: # the file is being read from p i.e. from /upper 
             f.seek(offset)
-            # print(f"size: {size}")
             data = f.read(size)
 
         print(f"[READ] path={path} reading from {p}, {len(data)} bytes, size={size}, offset={offset}, returning={data}")
@@ -780,7 +1040,6 @@ class MyFS(Fuse):
         """Create a new empty file in /upper and sync to /mirror."""
         p = _upper(path)
         _ensure_parent(p)
-        # print(f"[CREATE] Creating new file {p}")
 
         # Create file in upper layer
         # I opened the file, now it exists, even if I didn’t write on it yet.
@@ -790,6 +1049,11 @@ class MyFS(Fuse):
         # Sync to mirror
         _sync_to_mirror(path)
         print(f"[CREATE] Synced {p} → mirror")
+
+        # Track save-in-progress for temp files
+        if _is_temp_name(path):
+            _save_in_progress_dirs.add(os.path.dirname(path))
+
         # Update DB mapping and metadata
         try:
             if not _is_temp_name(path):
@@ -809,27 +1073,20 @@ class MyFS(Fuse):
         Rename a file or directory from 'old' → 'new'
         Both in /upper and in /mirror
         """
-        # print("I'm in the rename function")
-        # print(f"[DEBUG rename] called with old={old}, new={new}", flush=True)
         old_p = _upper(old)
         new_p = _upper(new)
-        # print(f"[RENAME] {old_p} → {new_p}")
 
         if not old_p.exists():
             from errno import ENOENT
             raise OSError(ENOENT, f"No such file: {old}")
 
         # ---------- GDPR ENFORCEMENT FOR FINAL SAVE ----------
-        # gedit pattern: .goutputstream-XXXX  -> real filename
-        if os.path.basename(old).startswith(".goutputstream-") and not _is_temp_name(new):
-            # Ask: is Use(fid, uid) allowed for this final file?
-            events = events_for_read(new)
-            cau_flag, sup_flag, _, _ = logger.log(events, threading.Event(), False)
-            print(f"[GDPR] rename check for {new}: cau_flag={cau_flag}, sup_flag={sup_flag}")
-
-            if sup_flag:
+        # temp → real file pattern (gedit .goutputstream-*, LibreOffice .tmp, etc.)
+        if _is_temp_name(old) and not _is_temp_name(new):
+            _, uids = _get_file_and_user(_upper(new))
+            all_consented = all(_check_consent(uid, _current_session_purpose) for uid in uids) if uids else True
+            if not all_consented:
                 print(f"[GDPR] Blocking final save for {new} due to missing consent")
-                # IMPORTANT: do NOT rename on disk, just fail
                 raise OSError(EACCES, "GDPR policy: write requires external consent")
         # ------------------------------------------------------
 
@@ -844,21 +1101,22 @@ class MyFS(Fuse):
             _ensure_parent(new_m)
             os.rename(old_m, new_m)
 
-        # print(f"[RENAME] Synced {old_p} → {new_p} and {old_m} → {new_m}")
-
         # After successful save, and after successful rename, re-check mapping for the final file name
         try:
             # Detect gedit/temporary saves: rename from temp → real file
-            if os.path.basename(old).startswith(".goutputstream-") and not _is_temp_name(new):
+            if _is_temp_name(old) and not _is_temp_name(new):
                 context = "write"  # treat this as a real save, not a rename
                 # Update DB for the final file
                 update_file_mapping_for_upper(str(new_p.resolve()), context=context)
                 update_file_metadata(str(new_p.resolve()), context)
                 # print(f"[DB] Updated mapping for final save {new}")
 
-                # Emit the GDPR Collect event for the real file
-                self._emit_collect_event(new)
-                print(f"[GDPR] Sent Collect event for final file {new} via Logger.log()")
+                # Emit the GDPR Write event for the real file
+                self._emit_write_event(new)
+                print(f"[GDPR] Sent Write event for final file {new} via Logger.log()")
+
+                # Clear save-in-progress flag
+                _save_in_progress_dirs.discard(os.path.dirname(new))
 
             else:
                 context = "rename"
@@ -948,3 +1206,6 @@ if __name__ == "__main__":
     start_consent_poller() # start the consent poller in the background
     start_ingest_server(logger) # start the ingest HTTP server for Consent/Revoke events
     fs.main()               # enter service loop
+
+
+# todo: What if for ODT, I want to include images and tables too? not only texts

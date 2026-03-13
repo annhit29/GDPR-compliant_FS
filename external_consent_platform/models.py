@@ -10,6 +10,7 @@ class Event(db.Model):
     kind = db.Column(db.String(16), nullable=False)  # Consent or Revoke
     uid = db.Column(db.String(128), nullable=False)
     purpose = db.Column(db.String(128), nullable=False) # service, analytics, marketing, etc.
+    spCat = db.Column(db.String(64), nullable=True) # GDPR Art 9 special data category (only for SpecialConsent)
     status = db.Column(db.String(16), default="pending")  # pending or acked
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -19,16 +20,20 @@ class CurrentEventState(db.Model):
     uid = db.Column(db.String(128), nullable=False)
     purpose = db.Column(db.String(128), nullable=False)
     category = db.Column(db.String(32), nullable=False, default="general") # consent category, request category, etc.
+    spCat = db.Column(db.String(64), nullable=True) # GDPR Art 9 special data category (only for special_consent category)
     status = db.Column(db.String(16), nullable=False)  # consented or revoked
     updated_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def as_dict(self):
-        return {
+        d = {
             "uid": self.uid,
             "purpose": self.purpose,
             "status": self.status,
             "updated_at": self.updated_at.isoformat() + "Z",
         }
+        if self.spCat:
+            d["spCat"] = self.spCat
+        return d
 
 class User(db.Model):
     """
