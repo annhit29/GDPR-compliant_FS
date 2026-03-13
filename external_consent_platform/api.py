@@ -7,11 +7,14 @@ bp = Blueprint("api", __name__)
 def list_events():
     status = request.args.get("status", "pending")
     q = Event.query.filter_by(status=status)
-    return jsonify([
-        dict(id=e.event_id, kind=e.kind, uid=e.uid, purpose=e.purpose,
-             status=e.status, created_at=e.created_at.isoformat() + "Z")
-        for e in q.order_by(Event.created_at.asc()).all()
-    ])
+    results = []
+    for e in q.order_by(Event.created_at.asc()).all():
+        d = dict(id=e.event_id, kind=e.kind, uid=e.uid, purpose=e.purpose,
+                 status=e.status, created_at=e.created_at.isoformat() + "Z")
+        if e.spCat:
+            d["spCat"] = e.spCat
+        results.append(d)
+    return jsonify(results)
 
 @bp.route("/events/<int:event_id>/ack", methods=["PATCH", "POST"])
 def ack_event(event_id):
@@ -28,6 +31,16 @@ def get_consent(uid, purpose):
     if not row:
         return jsonify({"uid": uid, "purpose": purpose, "status": "unknown"})
     return jsonify(row.as_dict())
+
+@bp.route("/consents/special/<uid>/<spCat>", methods=["GET"])
+def get_special_consent(uid, spCat):
+    """Check if uid has active special consent for a given special data category."""
+    row = CurrentEventState.query.filter_by(
+        uid=uid, category="special_consent", spCat=spCat
+    ).first()
+    if not row or row.status != "special_consented":
+        return jsonify({"uid": uid, "spCat": spCat, "status": "none"})
+    return jsonify({"uid": uid, "spCat": spCat, "status": row.status, "purpose": row.purpose})
 
 @bp.route("/consents", methods=["GET"])
 def list_current_states():

@@ -164,6 +164,17 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
             save_merge_alerts_for_ui(path_abs, alerts)
             print(f"[LLM create merge alert] Merge alerts created for {path_abs}: {alerts}")
 
+        # 5. Extract GDPR Art 9 special data categories from all chunks
+        # chunk["analysis"] comes from ChunkAnalysis.model_dump() in LLManalyzer/api.py
+        # which now includes "special_data_categories" field (default [])
+        all_special_cats = set()
+        for chunk in llm_results:
+            cats = chunk["analysis"].get("special_data_categories", [])
+            all_special_cats.update(cats)
+        file_obj.special_categories = ",".join(sorted(all_special_cats))
+        if all_special_cats:
+            print(f"[LLM Art9] Detected special data categories for {path_abs}: {all_special_cats}")
+
         s.commit()
         print(f"[LLM] Updated file_people for {len(file_obj.people)} persons")
 

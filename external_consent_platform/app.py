@@ -122,8 +122,11 @@ def submit():
         return redirect(url_for("index"))
         # return jsonify({"error": f"Unknown event type: {action}"}), 400
     
+    # Extract spCat for SpecialConsent (Art 9)
+    spCat = request.form.get("spCat", "").strip().lower() if action == "SpecialConsent" else None
+
     # Save the event locally in external_consent_platform.db
-    e = Event(kind=action, uid=uid, purpose=purpose, status="pending")
+    e = Event(kind=action, uid=uid, purpose=purpose, spCat=spCat, status="pending")
     db.session.add(e)
     db.session.commit()
 
@@ -131,14 +134,17 @@ def submit():
     state_change = evt_def.get("state_change")
     category = evt_def.get("category", "general")
     if state_change:
-        # use both uid and purpose for lookup (purpose may be empty)
-        s = CurrentEventState.query.filter_by(uid=uid, purpose=purpose, category=category).one_or_none()
+        # For SpecialConsent, include spCat in lookup to track per-category consent
+        if spCat:
+            s = CurrentEventState.query.filter_by(uid=uid, purpose=purpose, category=category, spCat=spCat).one_or_none()
+        else:
+            s = CurrentEventState.query.filter_by(uid=uid, purpose=purpose, category=category).one_or_none()
 
         if s:
             s.status = state_change
             s.updated_at = datetime.utcnow()
         else:
-            db.session.add(CurrentEventState(uid=uid, purpose=purpose, category=category, status=state_change))
+            db.session.add(CurrentEventState(uid=uid, purpose=purpose, category=category, spCat=spCat, status=state_change))
         db.session.commit()
     return redirect(url_for("index"))
 
