@@ -38,7 +38,7 @@ def get_special_consent(uid, spCat):
     row = CurrentEventState.query.filter_by(
         uid=uid, category="special_consent", spCat=spCat
     ).first()
-    if not row or row.status != "special_consented":
+    if not row or row.status not in ("special_consented", "special_revoked"):
         return jsonify({"uid": uid, "spCat": spCat, "status": "none"})
     return jsonify({"uid": uid, "spCat": spCat, "status": row.status, "purpose": row.purpose})
 

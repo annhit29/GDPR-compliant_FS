@@ -145,8 +145,8 @@ def replay_from_consent_db(logger):
 
             expected_nb_args = len(schema.mapping.get(ev_name, [])) # number of args expected for an event (triggered by data subjects) to take (2 for Consent/Revoke, 1 for RequestAccess/RequestErasure)
 
-            if ev_name == "SpecialConsent":
-                # SpecialConsent has 3 args: (uid, purpose, spCat)
+            if ev_name in ("SpecialConsent", "RevokeSpecialConsent"):
+                # SpecialConsent / RevokeSpecialConsent have 3 args: (uid, purpose, spCat)
                 spCat = row.get("spCat", "")
                 evt = Event(ev_name, uid, purpose, spCat)
             elif expected_nb_args == 2: # if event has 2 args (e.g. Consent, Revoke)
@@ -352,6 +352,7 @@ schema.add('Contains', [str, str])
 #for art9
 schema.add('Rectify', [str, str]) # for rectification events
 schema.add('SpecialConsent', [str, str, str]) # for special category data consent (uid, purpose, spCat)
+schema.add('RevokeSpecialConsent', [str, str, str]) # for revoking special category data consent (uid, purpose, spCat)
 schema.add('SpecialData', [str, str]) # for special category data (file_id, spCat)
 
 #for art13 and art15
@@ -489,6 +490,14 @@ def start_ingest_server(logger):
                             self.send_error(400, "missing purpose or spCat for SpecialConsent")
                             return
                         evt = Event("SpecialConsent", uid, purpose, spCat)
+
+                    # CASE 3b: RevokeSpecialConsent(uid, purpose, spCat) — Art 9
+                    elif kind == "RevokeSpecialConsent":
+                        spCat = str(payload.get("spCat", "")).strip()
+                        if not purpose or not spCat:
+                            self.send_error(400, "missing purpose or spCat for RevokeSpecialConsent")
+                            return
+                        evt = Event("RevokeSpecialConsent", uid, purpose, spCat)
 
                     # CASE 4: Consent/Revoke or others (already handled)
                     # Create a generic Event, supporting any kind

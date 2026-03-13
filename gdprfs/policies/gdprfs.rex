@@ -51,10 +51,10 @@ observable event SpecialConsent
     p : purpose
     spCat : special_data_category
 
-#observable event RevokeSpecialConsent
-#    exUid : user_id
-#    p : purpose
-#    spCat : special_data_category
+observable event RevokeSpecialConsent
+    exUid : user_id
+    p : purpose
+    spCat : special_data_category
 
 observable event RequestAccess
   exUid : user_id
@@ -299,16 +299,13 @@ rule "r_IsSpecialData"
 
 #assume false IsSpecialData #todo: what about medical certificate? this is health data, but sensitive enough?
 #    """This FileSystem does not process sensitive personal data (eg: political opinions, religious beliefs, sexual orientation, etc.)."""
-#todo: LLM: flag <- detecte dans les fichiers si une des special data presente
 
 #para2a
 rule "r_GiveSpecialConsent"
     whenever
-        #NOT RevokeSpecialConsent(ds, p, spCat) SINCE 
-        SpecialConsent(ds, p, spCat)
+        NOT RevokeSpecialConsent(ds, p, spCat) SINCE SpecialConsent(ds, p, spCat)
     refine
         GiveSpecialConsent(ds, p, "GDPRFS", spCat)
-#  """todo: implement LLM then maybe give extra param for Consent event indicating special?"""
 
 #para2b
 assume false IsNecessaryForEmploymentLaw

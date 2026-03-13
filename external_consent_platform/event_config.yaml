@@ -11,6 +11,10 @@ events:
     fields: [uid, purpose, spCat]
     state_change: special_consented
     category: special_consent
+  - name: RevokeSpecialConsent
+    fields: [uid, purpose, spCat]
+    state_change: special_revoked
+    category: special_consent
   - name: RequestAccess
     fields: [uid]
     state_change: access_requested
@@ -24,5 +28,6 @@ state_to_event:
   consented: Consent
   revoked: Revoke
   special_consented: SpecialConsent
+  special_revoked: RevokeSpecialConsent
   access_requested: RequestAccess
   erasure_requested: RequestErasure
