@@ -171,11 +171,16 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
         for chunk in llm_results:
             cats = chunk["analysis"].get("special_data_categories", [])
             all_special_cats.update(cats)
-        file_obj.special_categories = ",".join(sorted(all_special_cats))
+        joined = ",".join(sorted(all_special_cats))
+        file_obj.special_categories = joined
         if all_special_cats:
             print(f"[LLM Art9] Detected special data categories for {path_abs}: {all_special_cats}")
+            print(f"[LLM Art9] Storing special_categories = '{joined}' (len={len(joined)})")
 
         s.commit()
+        # Verify what was actually committed
+        s.refresh(file_obj)
+        print(f"[LLM Art9] After commit, special_categories = '{file_obj.special_categories}'")
         print(f"[LLM] Updated file_people for {len(file_obj.people)} persons")
 
 def run_llm_analysis_and_update_db(path_abs: str):
