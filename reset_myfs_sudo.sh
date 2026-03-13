@@ -20,13 +20,14 @@ fi
 
 # 2. Try to unmount /tmp/mnt
 echo "Unmounting /tmp/mnt if mounted..."
-sudo umount -l "$MNT" 2>/dev/null || true
 sudo fusermount3 -u "$MNT" 2>/dev/null || true
+sudo umount -l "$MNT" 2>/dev/null || true
+sleep 1
 
 # 3. Clean up and recreate the folder
 if [ -d "$MNT" ]; then
     echo "Removing existing mount folder..."
-    sudo rm -rf "$MNT"
+    sudo rm -rf "$MNT" || { echo "Retrying rm after delay..."; sleep 2; sudo rm -rf "$MNT"; }
 fi
 
 echo "Creating fresh /tmp/mnt..."
