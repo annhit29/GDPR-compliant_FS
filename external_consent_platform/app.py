@@ -122,8 +122,8 @@ def submit():
         return redirect(url_for("index"))
         # return jsonify({"error": f"Unknown event type: {action}"}), 400
     
-    # Extract spCat for SpecialConsent (Art 9)
-    spCat = request.form.get("spCat", "").strip().lower() if action == "SpecialConsent" else None
+    # Extract spCat for SpecialConsent / RevokeSpecialConsent (Art 9)
+    spCat = request.form.get("spCat", "").strip().lower() if action in ("SpecialConsent", "RevokeSpecialConsent") else None
 
     # Save the event locally in external_consent_platform.db
     e = Event(kind=action, uid=uid, purpose=purpose, spCat=spCat, status="pending")
