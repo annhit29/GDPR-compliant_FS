@@ -19,7 +19,7 @@ from instrlib.event import Event, Functional
 import os, shutil
 from pathlib import Path
 from gdprfs.db_utils import Session, sync_users_from_external, update_file_mapping_for_upper, update_file_metadata, mark_file_deleted, _is_temp_name
-from gdprfs.models import File, Person
+from gdprfs.models import File, Person, PersonFileSpecialCategory
 import yaml
 import json
 import subprocess # so the poller runs independently of the FUSE main loop, i.e. one daemon for FUSE, one daemon for poller
@@ -205,20 +205,42 @@ def _get_file_and_user(path: str):
         file_obj = session.query(File).filter(File.abs_path == str(Path(path).resolve())).first()
         if not file_obj:
             return None, []
-        
-        uids = []
-        for person in file_obj.people:
-            if person.uid:
-                uids.append(person.uid)
-            else:
-                # fallback ID for page-based enforcement
-                first = (person.first_name or "").lower().replace(" ", "")
-                last  = (person.last_name or "").lower().replace(" ", "")
-                uid = first[:1] + last if first or last else "anonymous"
-                uids.append(uid)
-
+        uids = [_person_effective_uid(person) for person in file_obj.people]        
         return file_obj.file_id, uids
 
+def _person_effective_uid(person: Person) -> str:
+    """Return the real uid if registered, else the deterministic pseudo-uid used elsewhere."""
+    if person.uid:
+        return person.uid
+    first = (person.first_name or "").lower().replace(" ", "")
+    last  = (person.last_name or "").lower().replace(" ", "")
+    return (first[:1] + last) if (first or last) else "anonymous"
+
+
+def _special_categories_by_uid_for_file(abs_path):
+    """
+    Return a dict: uid -> set(categories) for this file,
+    using PersonFileSpecialCategory instead of File.special_categories.
+    """
+    out = {}
+
+    with Session() as s:
+        f = s.query(File).filter(File.abs_path == str(Path(abs_path).resolve())).first()
+        if not f:
+            return out
+
+        rows = (
+            s.query(PersonFileSpecialCategory, Person)
+            .join(Person, Person.id == PersonFileSpecialCategory.person_id)
+            .filter(PersonFileSpecialCategory.file_id == f.id)
+            .all()
+        )
+
+        for pfsc, person in rows:
+            uid = _person_effective_uid(person)
+            out.setdefault(uid, set()).add(pfsc.special_category)
+
+    return out
 
 def events_for_path(path: str, event_type: str):
     """
@@ -299,31 +321,29 @@ def events_for_read(path):
 
 
 def _special_data_events(fid, abs_path, uids=None):
-    """Return SpecialData(fid, cat) events for a file if DB has Art 9 special categories
-    AND at least one linked data subject has NOT given special consent for that category.
+    """
+    Return SpecialData(fid, cat) events only for categories that actually apply
+    to at least one linked data subject in this file/page and for which that
+    subject lacks special consent.
 
     Due to a quantifier bug in the MFOTL Art 9 constraint (∃p.¬Exception22 instead of
     ¬∃p.Exception22), we handle Art 9 enforcement here: only co-emit SpecialData events
     when special consent is missing, so the enforcer correctly suppresses the Use/Write.
     When special consent exists, we skip co-emission (Art 9 exception 9(2)(a) is satisfied)."""
-    with Session() as s:
-        f = s.query(File).filter(File.abs_path == str(Path(abs_path).resolve())).first()
-        if not f or not f.special_categories:
-            return []
-        cats = [c.strip() for c in f.special_categories.split(",") if c.strip()]
-        if not cats:
-            return []
-        # For each category, check if ALL linked data subjects have special consent.
-        # Only co-emit SpecialData for categories where consent is missing (to trigger enforcer suppression).
-        uids = uids or []
-        unconsented_cats = []
-        for cat in cats:
-            for uid in uids:
-                if not _check_special_consent(uid, cat):
-                    unconsented_cats.append(cat)
-                    break  # one unconsented uid is enough
+    cats_by_uid = _special_categories_by_uid_for_file(abs_path)
+    if not cats_by_uid:
+        return []
+
+    uids = uids or []
+    unconsented_cats = set()
+
+    for uid in uids:
+        for cat in cats_by_uid.get(uid, set()):
+            if not _check_special_consent(uid, cat):
+                unconsented_cats.add(cat)
+
         if not unconsented_cats:
-            print(f"[GDPR Art9] All data subjects have special consent for {cats} → skipping SpecialData co-emission")
+            print(f"[GDPR Art9] All required person-specific special consents exist → skipping SpecialData co-emission")
             return []
         evts = [Event("SpecialData", fid, cat) for cat in unconsented_cats]
         print(f"[GDPR Art9] Co-emitting {len(evts)} SpecialData events for {fid} (unconsented categories: {unconsented_cats})")
@@ -595,15 +615,12 @@ class MyFS(Fuse):
                         print(f"[GDPR] Blocking write to {path}: {uid} has no consent")
                         raise OSError(EACCES, "GDPR policy: write requires consent")
                 # Art 9: check special consent for files with special data categories
-                with Session() as s:
-                    f_obj = s.query(File).filter(File.abs_path == str(p.resolve())).first()
-                    if f_obj and f_obj.special_categories:
-                        cats = [c.strip() for c in f_obj.special_categories.split(",") if c.strip()]
-                        for cat in cats:
-                            for uid in uids:
-                                if not _check_special_consent(uid, cat):
-                                    print(f"[GDPR Art9] Blocking write to {path}: {uid} lacks special consent for '{cat}'")
-                                    raise OSError(EACCES, f"GDPR Art 9: write requires special consent for '{cat}'")
+                cats_by_uid = _special_categories_by_uid_for_file(p)
+                for uid in uids:
+                    for cat in cats_by_uid.get(uid, set()):
+                        if not _check_special_consent(uid, cat):
+                            print(f"[GDPR Art9] Blocking write to {path}: {uid} lacks special consent for '{cat}'")
+                            raise OSError(EACCES, f"GDPR Art 9: write requires special consent for '{cat}'")
 
         # Write to the real upper file
         with open(p, "r+b" if p.exists() else "wb") as f:
@@ -960,17 +977,14 @@ class MyFS(Fuse):
                     return red[offset: offset + size]
 
             # Pre-check Art 9: if file has special categories and any uid lacks special consent
-            with Session() as s:
-                f = s.query(File).filter(File.abs_path == str(p.resolve())).first()
-                if f and f.special_categories:
-                    cats = [c.strip() for c in f.special_categories.split(",") if c.strip()]
-                    for cat in cats:
-                        for uid in uids:
-                            if not _check_special_consent(uid, cat):
-                                print(f"[GDPR Art9] {uid} lacks special consent for '{cat}' → REDACTED (no Use event logged)")
-                                red = b"REDACTED"
-                                return red[offset: offset + size]
-
+            cats_by_uid = _special_categories_by_uid_for_file(p)
+            for uid in uids:
+                for cat in cats_by_uid.get(uid, set()):
+                    if not _check_special_consent(uid, cat):
+                        print(f"[GDPR Art9] {uid} lacks special consent for '{cat}' → REDACTED (no Use event logged)")
+                        red = b"REDACTED"
+                        return red[offset: offset + size]
+            
             # Build Use events for all uids
             events = [Event("Use", fid, uid) for uid in uids]
             events.extend(_special_data_events(fid, p, uids))
@@ -1199,15 +1213,13 @@ class MyFS(Fuse):
                 print(f"[GDPR] Blocking final save for {new} due to missing consent")
                 raise OSError(EACCES, "GDPR policy: write requires external consent")
             # Art 9: check special consent for files with special data categories
-            with Session() as s:
-                f = s.query(File).filter(File.abs_path == str(new_p.resolve())).first()
-                if f and f.special_categories and uids:
-                    cats = [c.strip() for c in f.special_categories.split(",") if c.strip()]
-                    for cat in cats:
-                        for uid in uids:
-                            if not _check_special_consent(uid, cat):
-                                print(f"[GDPR Art9] Blocking final save for {new}: {uid} lacks special consent for '{cat}'")
-                                raise OSError(EACCES, f"GDPR Art 9: write requires special consent for '{cat}'")
+            cats_by_uid = _special_categories_by_uid_for_file(new_p)
+            for uid in uids:
+                for cat in cats_by_uid.get(uid, set()):
+                    if not _check_special_consent(uid, cat):
+                        print(f"[GDPR Art9] Blocking final save for {new}: {uid} lacks special consent for '{cat}'")
+                        raise OSError(EACCES, f"GDPR Art 9: write requires special consent for '{cat}'")
+
         # ------------------------------------------------------
 
 
