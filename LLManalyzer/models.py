@@ -28,6 +28,7 @@ class PersonHit(BaseModel):
     is_known_user: bool
     user_id: Optional[int]
     confidence: float
+    special_data_categories: List[SpecialDataCategory] = []  # Art 9 categories that apply specifically to THIS person
 
 class ChunkAnalysis(BaseModel):
     contains_personal_data: bool

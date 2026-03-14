@@ -3,7 +3,7 @@ import json
 import os
 from pathlib import Path
 import requests
-from gdprfs.models import File, Person, NameAlias, Session
+from gdprfs.models import File, Person, NameAlias, PersonFileSpecialCategory, Session
 from sqlalchemy import and_, func
 from gdprfs.merge_alerts import save_merge_alerts_for_ui
 from Levenshtein import distance  # if installed
@@ -176,6 +176,38 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
         if all_special_cats:
             print(f"[LLM Art9] Detected special data categories for {path_abs}: {all_special_cats}")
             print(f"[LLM Art9] Storing special_categories = '{joined}' (len={len(joined)})")
+
+        # 6. Store per-person-per-file special categories
+        # Clear old per-person categories for this file
+        s.query(PersonFileSpecialCategory).filter_by(file_id=file_obj.id).delete()
+
+        for chunk in llm_results:
+            persons = chunk["analysis"]["persons"]
+            for person_info in persons:
+                per_person_cats = person_info.get("special_data_categories", [])
+                if not per_person_cats:
+                    continue
+                # Resolve person
+                name = person_info["name"].strip()
+                first, *rest = name.split(" ")
+                last = " ".join(rest) if rest else ""
+                if person_info["is_known_user"]:
+                    person = s.query(Person).filter_by(id=person_info["user_id"]).first()
+                else:
+                    alias_norm = name.strip().lower()
+                    alias_row = s.query(NameAlias).filter(func.lower(NameAlias.alias) == alias_norm).first()
+                    if alias_row:
+                        person = s.get(Person, alias_row.person_id)
+                    else:
+                        person = s.query(Person).filter(and_(Person.first_name == first, Person.last_name == last)).first()
+                if person:
+                    for cat in per_person_cats:
+                        s.add(PersonFileSpecialCategory(
+                            person_id=person.id,
+                            file_id=file_obj.id,
+                            special_category=cat
+                        ))
+                    print(f"[LLM Art9] Person '{name}' (id={person.id}) → special categories: {per_person_cats}")
 
         s.commit()
         # Verify what was actually committed

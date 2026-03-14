@@ -37,6 +37,18 @@ class Person(Base):
     files = relationship("File", secondary=person_file_map, back_populates="people")
     aliases = relationship("NameAlias", backref="person", cascade="all, delete") # list of NameAlias objects to allow the LLM auto-detects aliases
 
+class PersonFileSpecialCategory(Base):
+    """Per-person-per-file Art 9 special data categories.
+    Tracks which special categories apply to which person in which file."""
+    __tablename__ = "person_file_special_category"
+    id = Column(Integer, primary_key=True)
+    person_id = Column(Integer, ForeignKey("person.id"), nullable=False)
+    file_id = Column(Integer, ForeignKey("file.id"), nullable=False)
+    special_category = Column(String(32), nullable=False)  # e.g. "health", "genetic"
+
+    person = relationship("Person")
+    file = relationship("File")
+
 class NameAlias(Base):
     __tablename__ = "alias_person_map"
 
@@ -49,6 +61,9 @@ class NameAlias(Base):
 ENGINE = create_engine("sqlite:////home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs.db")
 Session = sessionmaker(bind=ENGINE)
 # print("[GDPRFS] Using DB at:", ENGINE.url)
+
+# Ensure all tables exist (safe to call repeatedly — only creates missing tables)
+Base.metadata.create_all(ENGINE)
 
 # Always print the DB path on import (once per process)
 print(f"[GDPRFS] Using GDPRFS database at: {ENGINE.url}")
