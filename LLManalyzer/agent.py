@@ -97,13 +97,22 @@ the matching values. Use ONLY these exact values:
 
 If NONE of these categories are present, return an empty list [].
 
+IMPORTANT: Special data categories must be assigned **per person**, not just
+per chunk. Each person in the "persons" list has its own
+"special_data_categories" field. Only include categories that apply to THAT
+specific person's data. For example, if the text says "John's DNA shows X"
+and "Jane is Taiwanese", then John gets ["genetic"] and Jane gets
+["racial_ethnic"]. The chunk-level special_data_categories should still
+contain the union of all per-person categories.
+
 ----------------------------------------------
 TASK:
 1. Analyze the JSON input.
 2. Detect names, emails, phone numbers, identifiers.
 3. Compare detected names/emails against input["known_users"].
 4. Apply the confidence scoring rules.
-5. Detect any GDPR Article 9 special data categories.
-6. Fill the JSON fields accordingly.
+5. Detect any GDPR Article 9 special data categories PER PERSON.
+6. Also populate the chunk-level special_data_categories with the union of all per-person categories.
+7. Fill the JSON fields accordingly.
 """
 )
