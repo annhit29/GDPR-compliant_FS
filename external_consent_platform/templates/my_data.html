@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>My Data - GDPR Access Request</title>
+  <style>
+    body { font-family: sans-serif; margin: 2em; }
+  </style>
+</head>
+<body>
+  <h2>My Personal Data (Art 15)</h2>
+  <p>Logged in as: <strong>{{ uid }}</strong></p>
+
+  {% if info.ready %}
+    <p>Your data is ready for download.</p>
+    <a href="{{ url_for('download_my_data') }}"
+       style="display:inline-block; padding:8px 16px; background:#5cb85c; color:white; text-decoration:none;">
+      Download My Data (ZIP)
+    </a>
+  {% else %}
+    <p>No access request response available yet. Please submit a <strong>RequestAccess</strong> from the
+       <a href="{{ url_for('index') }}">main page</a> first.</p>
+  {% endif %}
+
+  <br><br>
+  <a href="{{ url_for('index') }}">Back to main page</a>
+</body>
+</html>

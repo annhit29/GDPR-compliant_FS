@@ -27,9 +27,12 @@ from pypdf import PdfReader, PdfWriter
 from io import BytesIO
 from fuse import Stat
 from errno import ENOENT
+import zipfile, time as _time
 
 PDF_CACHE = {}
 REDACTED_TEMPLATE = Path("/var/lib/gdprfs/redacted_template.pdf")
+_access_responses = {}  # uid -> {response_id, zip_path}
+
 _current_session_purpose = "marketing"  # updated by StartSession/StopSession
 _save_in_progress_dirs = set()  # directories where a temp→real save is in progress
 # todo: 0) d'autres formats de fichiers <- redacted qd lecture mm pour les txt (suppression handler)
@@ -471,6 +474,34 @@ import json
 
 def start_ingest_server(logger):
     class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path.startswith("/access_download/"):
+                response_id = self.path.split("/access_download/", 1)[1]
+                # Find the matching ZIP
+                zip_path = Path(f"/var/lib/gdprfs/access_responses/{response_id}.zip")
+                if zip_path.exists():
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/zip")
+                    self.send_header("Content-Disposition", f"attachment; filename={response_id}.zip")
+                    data = zip_path.read_bytes()
+                    self.send_header("Content-Length", str(len(data)))
+                    self.end_headers()
+                    self.wfile.write(data)
+                else:
+                    self.send_error(404, "Response not found")
+            elif self.path.startswith("/access_status/"):
+                uid = self.path.split("/access_status/", 1)[1]
+                info = _access_responses.get(uid)
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                if info:
+                    self.wfile.write(json.dumps({"ready": True, "response_id": info["response_id"]}).encode())
+                else:
+                    self.wfile.write(json.dumps({"ready": False}).encode())
+            else:
+                self.send_error(404, "Unknown endpoint")
+                
         def do_POST(self):
             global _current_session_purpose
             try:
@@ -518,6 +549,67 @@ def start_ingest_server(logger):
                             self.send_error(400, "missing purpose or spCat for RevokeSpecialConsent")
                             return
                         evt = Event("RevokeSpecialConsent", uid, purpose, spCat)
+
+                    # CASE 4: RequestAccess(uid)
+                    elif kind == "RequestAccess":
+                        import zipfile, time as _time
+
+                        # 1. Log RequestAccess to enforcer
+                        evt = Event("RequestAccess", uid)
+                        logger.log([evt], threading.Event(), False)
+
+                        # 2. Query DB for all files + special categories linked to this DS
+                        with Session() as db_sess:
+                            person = db_sess.query(Person).filter_by(uid=uid).first()
+                            file_records = []
+                            special_cats = {}  # file_id -> [categories]
+                            if person:
+                                file_records = [(f.file_id, f.abs_path) for f in person.files if f.abs_path]
+                                # Query Art 9 special categories per file for this person
+                                rows = (
+                                    db_sess.query(PersonFileSpecialCategory, File)
+                                    .join(File, File.id == PersonFileSpecialCategory.file_id)
+                                    .filter(PersonFileSpecialCategory.person_id == person.id)
+                                    .all()
+                                )
+                                for pfsc, f in rows:
+                                    special_cats.setdefault(f.file_id, []).append(pfsc.special_category)
+
+                        # 3. Package files + metadata manifest into a ZIP
+                        request_id = f"access_{uid}_{int(_time.time())}"
+                        response_id = f"response_{uid}_{int(_time.time())}"
+                        staging_dir = Path("/var/lib/gdprfs/access_responses")
+                        staging_dir.mkdir(parents=True, exist_ok=True)
+                        zip_path = staging_dir / f"{response_id}.zip"
+
+                        with zipfile.ZipFile(zip_path, 'w') as zf:
+                            for file_id, abs_path in file_records:
+                                if abs_path and Path(abs_path).exists():
+                                    zf.write(abs_path, arcname=os.path.basename(abs_path))
+                            # Include metadata manifest with special categories (Art 9)
+                            manifest = {"data_subject": uid, "files": []}
+                            for file_id, abs_path in file_records:
+                                entry = {"file_id": file_id, "filename": os.path.basename(abs_path or "")}
+                                if file_id in special_cats:
+                                    entry["special_categories_art9"] = special_cats[file_id]
+                                manifest["files"].append(entry)
+                            zf.writestr("manifest.json", json.dumps(manifest, indent=2))
+
+                        # 4. Emit RequestResponse to enforcer
+                        resp_evt = Event("RequestResponse", uid, "access", response_id)
+                        logger.log([resp_evt], threading.Event(), False)
+
+                        # 5. Track response for download
+                        _access_responses[uid] = {"response_id": response_id, "zip_path": str(zip_path)}
+
+                        # 6. Return success
+                        self.send_response(200)
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "ok": True, "message": "Access request processed",
+                            "response_id": response_id
+                        }).encode())
+                        return
 
                     # CASE 4: Consent/Revoke or others (already handled)
                     # Create a generic Event, supporting any kind

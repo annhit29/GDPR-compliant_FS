@@ -148,5 +148,37 @@ def submit():
         db.session.commit()
     return redirect(url_for("index"))
 
+# --- Data request and download routes ---
+@app.route("/my_data")
+def my_data():
+    if "uid" not in session:
+        return redirect(url_for("login"))
+    uid = session["uid"]
+    try:
+        resp = requests.get(f"http://127.0.0.1:7000/access_status/{uid}", timeout=3)
+        info = resp.json()
+    except Exception:
+        info = {"ready": False}
+    return render_template("my_data.html", info=info, uid=uid)
+
+@app.route("/download_my_data")
+def download_my_data():
+    if "uid" not in session:
+        return redirect(url_for("login"))
+    uid = session["uid"]
+    try:
+        status = requests.get(f"http://127.0.0.1:7000/access_status/{uid}", timeout=3).json()
+        if status.get("ready"):
+            resp = requests.get(
+                f"http://127.0.0.1:7000/access_download/{status['response_id']}", timeout=30)
+            from flask import Response
+            return Response(
+                resp.content,
+                mimetype="application/zip",
+                headers={"Content-Disposition": f"attachment; filename=my_data_{uid}.zip"})
+    except Exception as e:
+        flash(f"Download failed: {e}")
+    return redirect(url_for("my_data"))
+
 if __name__ == "__main__":
     run_simple("127.0.0.1", 5000, app, use_reloader=True, use_debugger=True, threaded=True) # to enable running concurrently the poller with the Flask app, so that the DS can see the latest consent/revocation status without restarting the Flask app.
