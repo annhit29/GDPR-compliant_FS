@@ -208,7 +208,17 @@ def _get_file_and_user(path: str):
         file_obj = session.query(File).filter(File.abs_path == str(Path(path).resolve())).first()
         if not file_obj:
             return None, []
-        uids = [_person_effective_uid(person) for person in file_obj.people]        
+        uids = [_person_effective_uid(person) for person in file_obj.people]
+        return file_obj.file_id, uids
+
+def _get_file_and_registered_user(path: str):
+    """Return (file_id, list of uids) for registered data subjects only.
+    Skips ghost/unregistered Person entries created by LLM analysis."""
+    with Session() as session:
+        file_obj = session.query(File).filter(File.abs_path == str(Path(path).resolve())).first()
+        if not file_obj:
+            return None, []
+        uids = [person.uid for person in file_obj.people if person.uid]
         return file_obj.file_id, uids
 
 def _person_effective_uid(person: Person) -> str:
@@ -771,13 +781,16 @@ class MyFS(Fuse):
     def _emit_collect_event(self, path: str):
         """Emit a GDPR Collect event when personal data enters the system.
 
+        Only emits for registered data subjects (with a real uid),
+        not for ghost Person entries inferred by LLM content analysis.
+
         Collect(fid, uid) refines to:
           - PersonalData(d, ds)        via r_PersonalData_Collect
           - IsCollection("Collect", ds) via r_IsCollection
           - HasIntendedAutomatedDecision(d, ...) via r_HasIntendedAutomatedDecision
         """
         try:
-            fid, uids = _get_file_and_user(_upper(path))
+            fid, uids = _get_file_and_registered_user(_upper(path))
             fid = fid or f"unknown-{os.path.basename(path)}"
             if uids:
                 events = [Event('Collect', fid, uid) for uid in uids]
