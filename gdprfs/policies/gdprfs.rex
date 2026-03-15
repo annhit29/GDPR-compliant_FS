@@ -61,6 +61,7 @@ observable event RequestAccess
 
 observable event RequestErasure
   exUid : user_id
+  fid   : file_id
 
 observable event UseNonPII
   fid   : file_id
@@ -215,10 +216,11 @@ assume false UndueDataDelay
 # so treat `Write(d,p)` as implying data is stored
 rule "r_Stored"
   whenever
-    Write(d, p) #todo: error: Write must be sup?! but why this doesn't happen w/ `r_GiveConsent`?
-    NOT Delete(d) SINCE Write(d, p)
+    Write(d, p)
+    NOT Delete(d) SINCE Write(d, p) #Delete(d) is used as a condition check, not as a trigger for a request.
   refine
     Stored(d)
+
 assume true IsNecessary
 
 #art5e rule "storage_limitation_exception"
@@ -591,8 +593,9 @@ assume false IsRectificationRequest
 #art17
 rule "r_ErasureRequest"
   whenever
-    Delete(d)
+    RequestErasure(ds, d)
   refine
+    Request(ds, "erasure", "GDPRFS")
     IsErasureRequest("erasure", d)
 
 rule "r_WithdrawConsent"

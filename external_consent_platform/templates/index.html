@@ -21,11 +21,16 @@
       {% endif %}
     </div>
 
-    <form method="post" action="{{ url_for('logout') }}">
-      <button type="submit" style="background:#d9534f; color:white; padding:5px 10px; cursor:pointer;">
-        Logout
-      </button>
-    </form>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <a href="{{ url_for('my_data') }}" style="padding:5px 10px; background:#5cb85c; color:white; text-decoration:none; white-space:nowrap;">
+        View / Download My Data
+      </a>
+      <form method="post" action="{{ url_for('logout') }}" style="margin:0;">
+        <button type="submit" style="background:#d9534f; color:white; padding:5px 10px; cursor:pointer; border:none;">
+          Logout
+        </button>
+      </form>
+    </div>
   </div>
   
   <form method="post" action="{{ url_for('submit') }}">

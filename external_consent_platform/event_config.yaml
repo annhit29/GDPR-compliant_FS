@@ -20,7 +20,7 @@ events:
     state_change: access_requested
     category: request
   - name: RequestErasure
-    fields: [uid]
+    fields: [uid, fid]
     state_change: erasure_requested
     category: request
 
