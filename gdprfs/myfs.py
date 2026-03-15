@@ -364,9 +364,9 @@ schema.add('StopSession', [str])
 schema.add('Consent', [str, str]) # for consent events
 schema.add('Revoke', [str, str]) # for revoke consent events
 schema.add('RequestAccess', [str]) # request all DS data events from the FS
-schema.add('RequestErasure', [str]) # request erasure of all DS data events in the FS
-
+schema.add('RequestErasure', [str, str]) # request erasure of all DS data events in the FS
 schema.add('RequestResponse', [str, str, str])
+
 schema.add('Contains', [str, str])
 
 #for art9
