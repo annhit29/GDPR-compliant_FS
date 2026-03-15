@@ -127,6 +127,7 @@ def resolve_merge():
         ]
 
         if new_alerts:
+            MERGE_ALERT_FILE.unlink(missing_ok=True)   # remove root-owned file before re-creating as current user
             MERGE_ALERT_FILE.write_text(json.dumps({
                 "file": data["file"],
                 "alerts": new_alerts

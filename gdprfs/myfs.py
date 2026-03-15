@@ -208,7 +208,17 @@ def _get_file_and_user(path: str):
         file_obj = session.query(File).filter(File.abs_path == str(Path(path).resolve())).first()
         if not file_obj:
             return None, []
-        uids = [_person_effective_uid(person) for person in file_obj.people]        
+        uids = [_person_effective_uid(person) for person in file_obj.people]
+        return file_obj.file_id, uids
+
+def _get_file_and_registered_user(path: str):
+    """Return (file_id, list of uids) for registered data subjects only.
+    Skips ghost/unregistered Person entries created by LLM analysis."""
+    with Session() as session:
+        file_obj = session.query(File).filter(File.abs_path == str(Path(path).resolve())).first()
+        if not file_obj:
+            return None, []
+        uids = [person.uid for person in file_obj.people if person.uid]
         return file_obj.file_id, uids
 
 def _person_effective_uid(person: Person) -> str:
@@ -736,6 +746,10 @@ class MyFS(Fuse):
         _sync_to_mirror(path)
         print(f"[WRITE] path={path} → synced to mirror")
 
+        # then emit Collect event for non-temp files (data entering the system)
+        if not _is_temp_name(path):
+            self._emit_collect_event(path)
+
         # --- LLM should NOT run for temp files ---
         if not _is_temp_name(path):
             try:
@@ -763,6 +777,30 @@ class MyFS(Fuse):
                 print(f"[GDPR] Write event emitted for {path}")
         except Exception as e:
             print(f"[GDPR] Warning: failed to emit Write event for {path}: {e}")
+
+    def _emit_collect_event(self, path: str):
+        """Emit a GDPR Collect event when personal data enters the system.
+
+        Only emits for registered data subjects (with a real uid),
+        not for ghost Person entries inferred by LLM content analysis.
+
+        Collect(fid, uid) refines to:
+          - PersonalData(d, ds)        via r_PersonalData_Collect
+          - IsCollection("Collect", ds) via r_IsCollection
+          - HasIntendedAutomatedDecision(d, ...) via r_HasIntendedAutomatedDecision
+        """
+        try:
+            fid, uids = _get_file_and_registered_user(_upper(path))
+            fid = fid or f"unknown-{os.path.basename(path)}"
+            if uids:
+                events = [Event('Collect', fid, uid) for uid in uids]
+                events.extend(_special_data_events(fid, _upper(path), uids))
+                cau, sup, _, _ = logger.log(events, threading.Event(), False)
+                print(f"[GDPR] Collect events emitted for {path}: {list(uids)}")
+            else:
+                print(f"[GDPR] No data subjects linked to {path}, skipping Collect")
+        except Exception as e:
+            print(f"[GDPR] Warning: failed to emit Collect event for {path}: {e}")
 
     def _make_redacted_page(self):
         """
@@ -1339,6 +1377,9 @@ class MyFS(Fuse):
                 self._emit_write_event(new)
                 print(f"[GDPR] Sent Write event for final file {new} via Logger.log()")
 
+                # (write/overwrite a file) Emit Collect event: data entering the system
+                self._emit_collect_event(new)
+
                 # Clear save-in-progress flag
                 _save_in_progress_dirs.discard(os.path.dirname(new))
 
@@ -1349,6 +1390,9 @@ class MyFS(Fuse):
                 update_file_mapping_for_upper(str(new_p.resolve()), context=context, old_name=os.path.basename(old))
                 update_file_metadata(str(new_p.resolve()), context)
                 print(f"[DB] Mapped after {context} → {new}")
+
+                # (rename a file) Emit Collect event: renamed file may now match a DS
+                self._emit_collect_event(new)
 
         except Exception as e:
             print(f"[DB] Warn: mapping after rename failed for {new}: {e}")

@@ -236,7 +236,7 @@ def run_llm_analysis_and_update_db(path_abs: str):
 
         # If file exists and hash matches, skip expensive LLM
         if file_obj and file_obj.sha256 == new_hash:
-            print(f"[LLM] SKIPPED — content unchanged (hash match).")
+            print(f"[LLM] SKIPPED: content unchanged (hash match).")
             return
 
         known_users = [
