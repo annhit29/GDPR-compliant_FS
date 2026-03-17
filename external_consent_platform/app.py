@@ -125,8 +125,11 @@ def submit():
     # Extract spCat for SpecialConsent / RevokeSpecialConsent (Art 9)
     spCat = request.form.get("spCat", "").strip().lower() if action in ("SpecialConsent", "RevokeSpecialConsent") else None
 
+    # Extract fid for RequestErasure (Art 17)
+    fid = request.form.get("fid", "").strip() if action == "RequestErasure" else None
+
     # Save the event locally in external_consent_platform.db
-    e = Event(kind=action, uid=uid, purpose=purpose, spCat=spCat, status="pending")
+    e = Event(kind=action, uid=uid, purpose=purpose, spCat=spCat, fid=fid, status="pending")
     db.session.add(e)
     db.session.commit()
 

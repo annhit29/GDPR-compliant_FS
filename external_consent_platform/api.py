@@ -13,6 +13,8 @@ def list_events():
                  status=e.status, created_at=e.created_at.isoformat() + "Z")
         if e.spCat:
             d["spCat"] = e.spCat
+        if e.fid:
+            d["fid"] = e.fid
         results.append(d)
     return jsonify(results)
 
