@@ -27,7 +27,8 @@ from pypdf import PdfReader, PdfWriter
 from io import BytesIO
 from fuse import Stat
 from errno import ENOENT
-import zipfile, time as _time
+import zipfile
+import time as _time
 
 PDF_CACHE = {}
 REDACTED_TEMPLATE = Path("/var/lib/gdprfs/redacted_template.pdf")
@@ -98,6 +99,19 @@ def _delete_from_mirror(fuse_path: str):
     dst = _mirror(fuse_path)
     if dst.exists():
         dst.unlink()
+
+def _do_delete_file(fuse_path: str):
+    """Delete a file from upper + mirror + DB.
+    Called by both FUSE unlink() and enforcer causation handler."""
+    p = _upper(fuse_path)
+    if p.exists():
+        os.unlink(p)
+    _delete_from_mirror(fuse_path)
+    try:
+        mark_file_deleted(str(p.resolve()))
+    except Exception as e:
+        print(f"[DB] Warning: failed to log deletion for {p}: {e}")
+    print(f"[DELETE] {fuse_path} removed from upper, mirror, and DB")
 
 def _check_consent(uid: str, purpose: str) -> bool:
     """Return True if uid has active consent for purpose, False if revoked."""
@@ -385,6 +399,38 @@ schema.add('IsCategory', [str, str])
 schema.add('Record', [str, str, str, str, str]) # for recording an event in the data subject's record
 
 # ========== HANDLERS ==========
+def delete_causation_handler(event_list):
+    """Called by enforcer when it causes Delete(fid) (Art 17 erasure or Art 5 accuracy).
+    args is list[str], e.g. ['fhublet.txt'] — not list[list[str]]."""
+    for event_json in event_list:
+        args = event_json.get("args", [])
+        fid = args[0] if args else ""
+        if not fid:
+            print(f"[CAUSATION] Enforcer caused Delete with empty fid, skipping")
+            continue
+        print(f"[CAUSATION] Enforcer caused Delete({fid})")
+
+        with Session() as session:
+            from gdprfs.models import File
+            f = session.query(File).filter_by(file_id=fid).first()
+            if not f:
+                print(f"[CAUSATION] File {fid} not found in DB, skipping")
+                continue
+
+        _do_delete_file("/" + fid)
+
+        # Write Delete to trace file directly (NOT via logger.log which would
+        # send it back to the enforcer and cause a deadlock in the proactive thread).
+        # The enforcer already caused this Delete, so it knows about it.
+        from gdprfs.settings import INSTRLIB_LOG
+        try:
+            ts = int(_time.time() * 1000)
+            with open(INSTRLIB_LOG, 'a') as log:
+                log.write(f'@{ts} Delete("{fid}");\n')
+                print(f"[CAUSATION] Wrote @{ts} Delete(\"{fid}\") to trace log")
+        except Exception as e:
+            print(f"[CAUSATION] Warning: failed to write Delete to trace: {e}")
+
 def none_handler(event_name, event_args, response, *args, **kwargs):
     """
     Python side  =/= Enforcer side
@@ -395,7 +441,7 @@ def none_handler(event_name, event_args, response, *args, **kwargs):
 
 suppression_handlers = {('Use'): none_handler, ('Write'): none_handler}
 causation_handlers = {
-    ('Delete'): none_handler,
+    ('Delete'): delete_causation_handler,
     ('IsCategory'): none_handler,
     ('RequestResponse'): none_handler,  # enforcer handles Art 15 response
     ('Contains'): none_handler,          # enforcer handles response content
@@ -534,7 +580,7 @@ def start_ingest_server(logger):
                         _current_session_purpose = "marketing"
                         evt = Event("StopSession", uid)
 
-                    # CASE 3: SpecialConsent(uid, purpose, spCat) — Art 9
+                    # CASE 3a: SpecialConsent(uid, purpose, spCat) of Art 9
                     elif kind == "SpecialConsent":
                         spCat = str(payload.get("spCat", "")).strip()
                         if not purpose or not spCat:
@@ -542,7 +588,7 @@ def start_ingest_server(logger):
                             return
                         evt = Event("SpecialConsent", uid, purpose, spCat)
 
-                    # CASE 3b: RevokeSpecialConsent(uid, purpose, spCat) — Art 9
+                    # CASE 3b: RevokeSpecialConsent(uid, purpose, spCat) of Art 9
                     elif kind == "RevokeSpecialConsent":
                         spCat = str(payload.get("spCat", "")).strip()
                         if not purpose or not spCat:
@@ -550,10 +596,8 @@ def start_ingest_server(logger):
                             return
                         evt = Event("RevokeSpecialConsent", uid, purpose, spCat)
 
-                    # CASE 4: RequestAccess(uid)
+                    # CASE 4a: RequestAccess(uid)
                     elif kind == "RequestAccess":
-                        import zipfile, time as _time
-
                         # 1. Log RequestAccess to enforcer
                         evt = Event("RequestAccess", uid)
                         logger.log([evt], threading.Event(), False)
@@ -607,6 +651,46 @@ def start_ingest_server(logger):
                         self.end_headers()
                         self.wfile.write(json.dumps({
                             "ok": True, "message": "Access request processed",
+                            "response_id": response_id
+                        }).encode())
+                        return
+
+                    # CASE 4b: RequestErasure(uid)
+                    elif kind == "RequestErasure":
+                        fid = payload.get("fid", "").strip()
+                        if not uid or not fid:
+                            self.send_error(400, "missing uid or fid for RequestErasure")
+                            return
+
+                        # Pre-check: Art 17.b requires consent to be withdrawn first.
+                        # If consent is still active for ANY purpose, erasure won't trigger.
+                        has_active_consent = any(
+                            _check_consent(uid, p) for p in ("marketing", "service", "analytics")
+                        )
+                        if has_active_consent:
+                            self.send_response(200)
+                            self.end_headers()
+                            self.wfile.write(json.dumps({
+                                "ok": False,
+                                "message": f"Erasure rejected: {uid} still has active consent. Revoke consent first."
+                            }).encode())
+                            return
+
+                        # 1. Log RequestErasure(uid, fid): 2 args per schema
+                        evt = Event("RequestErasure", uid, fid)
+                        logger.log([evt], threading.Event(), False)
+
+                        # 2. Emit RequestResponse (required by gdpr.lex Art 17 points a/b)
+                        response_id = f"response_{uid}_{int(_time.time())}"
+                        resp_evt = Event("RequestResponse", uid, "erasure", response_id)
+                        logger.log([resp_evt], threading.Event(), False)
+
+                        # 3. Return success: enforcer will cause Delete(fid) if obliged
+                        self.send_response(200)
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "ok": True,
+                            "message": f"RequestErasure logged for {uid}, file {fid}",
                             "response_id": response_id
                         }).encode())
                         return
@@ -1372,17 +1456,7 @@ class MyFS(Fuse):
             from errno import ENOENT
             raise OSError(ENOENT, "No such file or directory")
 
-        # Delete in upper and mirror
-        os.unlink(p) # delete from upper
-        _delete_from_mirror(path) # delete from mirror
-        print(f"[UNLINK] path={path} → removed from upper and mirror")
-
-        # Update the database to reflect the deletion
-        try:
-            mark_file_deleted(str(p.resolve()))
-        except Exception as e:
-            print(f"[DB] Warning: failed to log deletion for {p}: {e}")
-
+        _do_delete_file(path)
         return 0
 
     def statfs(self):
