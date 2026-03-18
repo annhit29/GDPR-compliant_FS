@@ -31,6 +31,7 @@ import zipfile
 import time as _time
 
 PDF_CACHE = {}
+CSV_CACHE = {}  # key: absolute Path → {"enforced_bytes": bytes, "mtime": float}
 REDACTED_TEMPLATE = Path("/var/lib/gdprfs/redacted_template.pdf")
 _access_responses = {}  # uid -> {response_id, zip_path}
 
@@ -814,6 +815,10 @@ class MyFS(Fuse):
             f.write(data) # data written into the real file in /upper
             f.flush() # flush to disk
 
+        # Invalidate CSV cache after write
+        if str(p).lower().endswith(".csv"):
+            CSV_CACHE.pop(p, None)
+
         # --- skip temp files ---
         if not _is_temp_name(path):
             # print("before trying to update mapping in _write")
@@ -993,6 +998,84 @@ class MyFS(Fuse):
         PDF_CACHE[abspath] = {"redacted_bytes": data}
         return data
 
+    def _get_or_build_enforced_csv(self, path, emit_events=True):
+        """Build (once) and cache an enforced version of the CSV with redacted rows."""
+        abspath = _upper(path)
+        mtime = abspath.stat().st_mtime
+
+        cache = CSV_CACHE.get(abspath)
+        if cache and cache.get("mtime") == mtime:
+            return cache["enforced_bytes"]
+
+        print("[CSV] Building enforced CSV (cache miss or stale)")
+
+        fid, file_level_uids = _get_file_and_user(abspath)
+        base_fid = fid or os.path.basename(path)
+
+        # Read original CSV as text
+        with open(abspath, "r", newline="", encoding="utf-8", errors="ignore") as f:
+            reader = list(csv.reader(f))
+
+        output = []
+        rows = reader
+
+        # Pre-check Art 6: if any file-level uid has revoked consent, redact all rows
+        all_consented = all(_check_consent(uid, _current_session_purpose) for uid in file_level_uids) if file_level_uids else True
+
+        # Pre-check Art 9: if file has special categories and any uid lacks special consent
+        art9_blocked = False
+        if all_consented and file_level_uids:
+            with Session() as s:
+                f_obj = s.query(File).filter(File.abs_path == str(abspath.resolve())).first()
+                if f_obj and f_obj.special_categories:
+                    cats = [c.strip() for c in f_obj.special_categories.split(",") if c.strip()]
+                    for cat in cats:
+                        for uid in file_level_uids:
+                            if not _check_special_consent(uid, cat):
+                                print(f"[GDPR Art9] {uid} lacks special consent for '{cat}' → redacting CSV")
+                                art9_blocked = True
+                                break
+                        if art9_blocked:
+                            break
+
+        # Skip per-row Use events if a save is in progress
+        save_in_progress = os.path.dirname(path) in _save_in_progress_dirs
+
+        for idx, row in enumerate(rows):
+            if not file_level_uids:
+                output.append(row)
+                continue
+
+            if not all_consented or art9_blocked:
+                output.append(["REDACTED"] * len(row))
+                continue
+
+            if save_in_progress or not emit_events:
+                output.append(row)
+                continue
+
+            # Normal read: emit per-row Use events
+            row_fid = f"{base_fid}/row-{idx}"
+            events = [Event("Use", row_fid, uid) for uid in file_level_uids]
+            events.extend(_special_data_events(row_fid, abspath, file_level_uids))
+
+            cau, sup, _, _ = logger.log(events, threading.Event(), False)
+
+            if sup:
+                print(f"[CSV] Row {idx} suppressed")
+                output.append(["REDACTED"] * len(row))
+            else:
+                output.append(row)
+
+        # Serialize CSV back to bytes
+        buf = StringIO()
+        writer = csv.writer(buf)
+        writer.writerows(output)
+        csv_bytes = buf.getvalue().encode("utf-8")
+
+        CSV_CACHE[abspath] = {"enforced_bytes": csv_bytes, "mtime": mtime}
+        return csv_bytes
+
     def getattr(self, path): #v
         """
         Return the attributes of a file or directory.
@@ -1032,6 +1115,14 @@ class MyFS(Fuse):
         # For TXT files, make sure size is at least length of "REDACTED"
         if real_path.suffix.lower() == ".txt":
             st.st_size = max(st.st_size, len(b"REDACTED")) # len(b"REDACTED") = 8 bytes
+
+        # For CSV files, report the enforced content size (no Use events in getattr)
+        if real_path.suffix.lower() == ".csv" and real_path.is_file():
+            try:
+                enforced = self._get_or_build_enforced_csv(path, emit_events=False)
+                st.st_size = len(enforced)
+            except Exception as e:
+                print(f"[CSV] getattr size override failed: {e}")
 
         return st
 
@@ -1132,11 +1223,23 @@ class MyFS(Fuse):
         # allow access if the path exists in /upper
         p = _upper(path)
         if p.exists():
+            lower = str(p).lower()
             # PDF cache invalidation
-            if str(p).lower().endswith(".pdf"):
+            if lower.endswith(".pdf"):
                 PDF_CACHE.pop(p, None)
+            # CSV cache invalidation
+            if lower.endswith(".csv"):
+                CSV_CACHE.pop(p, None)
             update_file_mapping_for_upper(str(p.resolve()), context="open")
             update_file_metadata(str(p.resolve()), "open")
+
+            # Disable kernel page cache for enforced file types
+            # so our read() is always called (enforcement may change between opens)
+            if lower.endswith(".csv") or lower.endswith(".pdf") or lower.endswith(".txt"):
+                ffi = fuse.FuseFileInfo()
+                ffi.direct_io = True
+                return ffi
+
             return 0
         raise OSError(ENOENT, "No such file or directory")
 
@@ -1282,82 +1385,12 @@ class MyFS(Fuse):
         #     return redacted_bytes[offset : offset + size]
 
         # =========== Case4: CSV row-based enforcement ===========
-        # todo: fix the last characters should display
         if str(p).lower().endswith(".csv"):
             print("[CSV] Row-based enforcement for CSV read")
-
-            fid, file_level_uids = _get_file_and_user(_upper(path))
-            base_fid = fid or os.path.basename(path)
-
-            # Read original CSV as text
-            with open(p, "r", newline="", encoding="utf-8", errors="ignore") as f:
-                reader = list(csv.reader(f))
-
-            output = []
-
-            rows = reader # all rows, including header
-
-            # Pre-check Art 6: if any file-level uid has revoked consent, redact all rows without logging
-            all_consented = all(_check_consent(uid, _current_session_purpose) for uid in file_level_uids) if file_level_uids else True
-
-            # Pre-check Art 9: if file has special categories and any uid lacks special consent
-            art9_blocked = False
-            if all_consented and file_level_uids:
-                with Session() as s:
-                    f_obj = s.query(File).filter(File.abs_path == str(p.resolve())).first()
-                    if f_obj and f_obj.special_categories:
-                        cats = [c.strip() for c in f_obj.special_categories.split(",") if c.strip()]
-                        for cat in cats:
-                            for uid in file_level_uids:
-                                if not _check_special_consent(uid, cat):
-                                    print(f"[GDPR Art9] {uid} lacks special consent for '{cat}' → redacting CSV")
-                                    art9_blocked = True
-                                    break
-                            if art9_blocked:
-                                break
-
-            # Skip per-row Use events if a save is in progress (read during save workflow)
-            save_in_progress = os.path.dirname(path) in _save_in_progress_dirs
-
-            for idx, row in enumerate(rows):
-                # Use file-level person mapping for enforcement
-                if not file_level_uids:
-                    output.append(row)  # no owner → no enforcement needed
-                    continue
-
-                if not all_consented or art9_blocked:
-                    print(f"[CSV] Row {idx}: consent missing — redacting without logging")
-                    output.append(["REDACTED"] * len(row))
-                    continue
-
-                if save_in_progress:
-                    output.append(row)  # no Use event during save workflow
-                    continue
-
-                # Normal read (viewing): emit per-row Use events
-                row_fid = f"{base_fid}/row-{idx}"
-                events = [Event("Use", row_fid, uid) for uid in file_level_uids]
-                events.extend(_special_data_events(row_fid, p, file_level_uids))
-
-                cau, sup, _, _ = logger.log(events, threading.Event(), False)
-
-                if sup:
-                    print(f"[CSV] Row {idx} suppressed")
-                    output.append(["REDACTED"] * len(row))
-                else:
-                    output.append(row)
-
-            # Serialize CSV back to bytes
-            buf = StringIO()
-            writer = csv.writer(buf)
-            writer.writerows(output)
-
-            csv_bytes = buf.getvalue().encode("utf-8")
-
+            enforced = self._get_or_build_enforced_csv(path, emit_events=True)
             update_file_mapping_for_upper(str(p.resolve()), context="read")
             update_file_metadata(str(p.resolve()), "read")
-
-            return csv_bytes[offset : offset + size]
+            return enforced[offset : offset + size]
 
         # =========== Case5: Fallback case: non-pdf and non-txt files ===========        
         # return only the requested slice, as bytes
@@ -1439,6 +1472,10 @@ class MyFS(Fuse):
 
         _ensure_parent(new_p)
         os.rename(old_p, new_p)
+
+        # Invalidate CSV cache for old and new paths
+        CSV_CACHE.pop(old_p, None)
+        CSV_CACHE.pop(new_p, None)
 
         # Also rename in mirror if it exists
         old_m = _mirror(old)
