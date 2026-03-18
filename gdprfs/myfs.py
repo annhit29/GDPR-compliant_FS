@@ -430,18 +430,6 @@ def delete_causation_handler(event_list):
 
         _do_delete_file("/" + fid)
 
-        # Write Delete to trace file directly (NOT via logger.log which would
-        # send it back to the enforcer and cause a deadlock in the proactive thread).
-        # The enforcer already caused this Delete, so it knows about it.
-        from gdprfs.settings import INSTRLIB_LOG
-        try:
-            ts = int(_time.time() * 1000)
-            with open(INSTRLIB_LOG, 'a') as log:
-                log.write(f'@{ts} Delete("{fid}");\n')
-                print(f"[CAUSATION] Wrote @{ts} Delete(\"{fid}\") to trace log")
-        except Exception as e:
-            print(f"[CAUSATION] Warning: failed to write Delete to trace: {e}")
-
 def none_handler(event_name, event_args, response, *args, **kwargs):
     """
     Python side  =/= Enforcer side
