@@ -7,6 +7,7 @@ Record(pr: string, c: string, a: string, p: string, v: string)+
 Rectify(d_old: string, d_new: string)+
 RequestAccess(exUid: string)
 RequestErasure(exUid: string, fid: string)
+RequestRectification(exUid: string, fid_old: string, fid_new: string)
 RequestResponse(ds: string, rq: string, rs: string)+
 Revoke(exUid: string, p: string)
 RevokeSpecialConsent(exUid: string, p: string, spCat: string)
