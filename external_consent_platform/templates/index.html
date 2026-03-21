@@ -57,6 +57,10 @@
         <option value="biometric">Biometric</option>
         <option value="sex_life">Sex Life</option>
       </select>
+    {% elif field == 'fid_new' %}
+      <input id="fid_new_input" name="fid_new" placeholder="Fid_new (auto-filled after upload)">
+      <input type="file" id="rectify_file_picker" style="display:none">
+      <button type="button" onclick="document.getElementById('rectify_file_picker').click()">Upload corrected file</button>
     {% else %}
       <input name="{{ field }}" placeholder="{{ field|capitalize }}">
     {% endif %}
@@ -98,5 +102,25 @@
     {% endfor %}
   </table>
 {% endfor %}
+
+<script>
+  document.getElementById('rectify_file_picker').addEventListener('change', function() {
+    const file = this.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    fetch('/upload_rectification', { method: 'POST', body: formData })
+      .then(r => r.json())
+      .then(data => {
+        if (data.fid_new) {
+          document.getElementById('fid_new_input').value = data.fid_new;
+          alert('File uploaded. fid_new: ' + data.fid_new);
+        } else {
+          alert('Upload failed: ' + JSON.stringify(data));
+        }
+      })
+      .catch(e => alert('Upload error: ' + e));
+  });
+</script>
 </body>
 </html>

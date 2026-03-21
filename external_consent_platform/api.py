@@ -15,6 +15,8 @@ def list_events():
             d["spCat"] = e.spCat
         if e.fid:
             d["fid"] = e.fid
+        if e.fid_new:
+            d["fid_new"] = e.fid_new
         results.append(d)
     return jsonify(results)
 

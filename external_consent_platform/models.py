@@ -11,7 +11,8 @@ class Event(db.Model):
     uid = db.Column(db.String(128), nullable=False)
     purpose = db.Column(db.String(128), nullable=False) # service, analytics, marketing, etc.
     spCat = db.Column(db.String(64), nullable=True) # GDPR Art 9 special data category (only for SpecialConsent)
-    fid = db.Column(db.String(256), nullable=True) # file_id for RequestErasure (Art 17)
+    fid = db.Column(db.String(256), nullable=True) # file_id for RequestErasure (Art 17); fid_old for RequestRectification (Art 16)
+    fid_new = db.Column(db.String(256), nullable=True) # new file_id for RequestRectification (Art 16)
     status = db.Column(db.String(16), default="pending")  # pending or acked
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
