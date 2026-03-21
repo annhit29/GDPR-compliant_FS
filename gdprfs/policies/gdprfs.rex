@@ -117,7 +117,7 @@ rule "r_DataProcessing_Use"
     Use(d, _)
   refine
     DataProcessing("GDPRFS", "GDPRFS", "Use", d) #l39 #"Use" activity coz gdpr.lex l42: Data d is processed by processor "GDPRFS" on behalf of controller "GDPRFS" as part of data processing activity "Use"
-
+#or
 rule "r_DataProcessing_Write"
   whenever
     Write(d, _)
@@ -581,27 +581,6 @@ rule "r_RectificationRequest"
     Request(ds, "rectification", "GDPRFS")
     IsRectificationRequest("rectification", d, d')
     HasInaccuracy(d)
-
-#assume false HasInaccuracy
-#    """We do not have any inaccurate data."""
-
-#Whenever the system writes (updates) data d,
-#we consider that a rectification request was made
-#asking to rectify data d into d.
-#Commented out: Write is suppressable but Rectify must be causable,
-#creating an unsatisfiable typing constraint (SSup ≥ t(Write) ∧ t(Write) ≥ NSup).
-#Since HasInaccuracy is assumed false, this rule is unreachable anyway.
-#rule "r_RectificationRequest"
-#  whenever
-#    Write(d, p)
-#  refine
-#    IsRectificationRequest("rectify", d, d)
-
-#assume false IsRectificationRequest
-#    """No rectification requests arise since HasInaccuracy is assumed false (no data is inaccurate).
-#    No inaccuracies means no rectification requests."""
-
-#todo: supprimer <- data processing = Write event included too
 
 #art17
 rule "r_ErasureRequest"

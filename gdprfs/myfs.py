@@ -752,8 +752,10 @@ def start_ingest_server(logger):
                         resp_evt = Event("RequestResponse", uid, "rectification", response_id)
                         logger.log([resp_evt], threading.Event(), False)
 
-                        # Perform rectification directly (enforcer causation bug workaround)
-                        rectify_causation_handler([{"name": "Rectify", "args": [fid_old, fid_new]}])
+                        # Perform rectification in background (enforcer causation bug workaround)
+                        threading.Thread(target=rectify_causation_handler,
+                                         args=([{"name": "Rectify", "args": [fid_old, fid_new]}],),
+                                         daemon=True).start()
 
                         self.send_response(200)
                         self.end_headers()
