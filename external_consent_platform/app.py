@@ -125,11 +125,15 @@ def submit():
     # Extract spCat for SpecialConsent / RevokeSpecialConsent (Art 9)
     spCat = request.form.get("spCat", "").strip().lower() if action in ("SpecialConsent", "RevokeSpecialConsent") else None
 
-    # Extract fid for RequestErasure (Art 17)
-    fid = request.form.get("fid", "").strip() if action == "RequestErasure" else None
+    # Extract fid for RequestErasure (Art 17); fid_old for RequestRectification (Art 16)
+    fid = request.form.get("fid", "").strip() if action == "RequestErasure" else (
+          request.form.get("fid_old", "").strip() if action == "RequestRectification" else None)
+
+    # Extract fid_new for RequestRectification (Art 16)
+    fid_new = request.form.get("fid_new", "").strip() if action == "RequestRectification" else None
 
     # Save the event locally in external_consent_platform.db
-    e = Event(kind=action, uid=uid, purpose=purpose, spCat=spCat, fid=fid, status="pending")
+    e = Event(kind=action, uid=uid, purpose=purpose, spCat=spCat, fid=fid, fid_new=fid_new, status="pending")
     db.session.add(e)
     db.session.commit()
 
@@ -182,6 +186,25 @@ def download_my_data():
     except Exception as e:
         flash(f"Download failed: {e}")
     return redirect(url_for("my_data"))
+
+@app.route("/upload_rectification", methods=["POST"])
+def upload_rectification():
+    """DS uploads corrected file here (port 5000); we proxy it to GDPRFS (port 7000)."""
+    if "uid" not in session:
+        return jsonify({"error": "not logged in"}), 401
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "no file provided"}), 400
+    import base64
+    content_b64 = base64.b64encode(f.read()).decode()
+    try:
+        resp = requests.post(
+            "http://127.0.0.1:7000/upload_rectification",
+            json={"filename": f.filename, "content_b64": content_b64},
+            timeout=10)
+        return jsonify(resp.json()), resp.status_code
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     run_simple("127.0.0.1", 5000, app, use_reloader=True, use_debugger=True, threaded=True) # to enable running concurrently the poller with the Flask app, so that the DS can see the latest consent/revocation status without restarting the Flask app.

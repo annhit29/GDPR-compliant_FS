@@ -29,6 +29,7 @@ from fuse import Stat
 from errno import ENOENT
 import zipfile
 import time as _time
+import base64, uuid as _uuid
 
 PDF_CACHE = {}
 CSV_CACHE = {}  # key: absolute Path → {"enforced_bytes": bytes, "mtime": float}
@@ -47,6 +48,7 @@ MIRROR_DIR = Path("/var/lib/gdprfs/mirror")
 # Make sure the directories exist and are private
 UPPER_DIR.mkdir(parents=True, exist_ok=True)
 MIRROR_DIR.mkdir(parents=True, exist_ok=True)
+(UPPER_DIR / "_rectify_staging").mkdir(parents=True, exist_ok=True) # a directory for staging files for Art 16 rectification files, not accessible by users and cleaned up after use
 os.chmod(MIRROR_DIR, 0o700) # The directory /var/lib/gdprfs/mirror is accessible only by root (rwx------)
 """
 [Design choice] not having other users access the mirror dir:
@@ -393,6 +395,10 @@ schema.add('Consent', [str, str]) # for consent events
 schema.add('Revoke', [str, str]) # for revoke consent events
 schema.add('RequestAccess', [str]) # request all DS data events from the FS
 schema.add('RequestErasure', [str, str]) # request erasure of all DS data events in the FS
+
+#for art16
+schema.add('RequestRectification', [str, str, str])  # Art 16: (uid, fid_old, fid_new)
+
 schema.add('RequestResponse', [str, str, str])
 
 schema.add('Contains', [str, str])
@@ -430,6 +436,38 @@ def delete_causation_handler(event_list):
 
         _do_delete_file("/" + fid)
 
+def rectify_causation_handler(event_list):
+    """Called by enforcer when it causes Rectify(fid_old, fid_new)."""
+    for event_json in event_list:
+        args = event_json.get("args", [])
+        fid_old = args[0] if len(args) > 0 else "" 
+        fid_new = args[1] if len(args) > 1 else ""
+        if not fid_old or not fid_new:
+            print(f"[CAUSATION] Rectify with missing args, skipping")
+            continue
+        print(f"[CAUSATION] Enforcer caused Rectify({fid_old}, {fid_new})")
+
+        staging_path = Path(UPPER_DIR) / "_rectify_staging" / fid_new
+        target_upper = _upper("/" + fid_old)
+        target_mirror = _mirror("/" + fid_old)
+
+        if not staging_path.exists():
+            print(f"[CAUSATION] Staged file {staging_path} not found")
+            continue
+
+        # Replace file content
+        shutil.copy2(str(staging_path), str(target_upper))
+        if target_mirror.exists():
+            shutil.copy2(str(staging_path), str(target_mirror))
+        staging_path.unlink()
+
+        # Invalidate caches
+        CSV_CACHE.pop(str(target_upper), None)
+        PDF_CACHE.pop(str(target_upper), None)
+
+        # Re-run LLM analysis on rectified file
+        run_llm_analysis_and_update_db(str(target_upper))
+
 def none_handler(event_name, event_args, response, *args, **kwargs):
     """
     Python side  =/= Enforcer side
@@ -444,7 +482,7 @@ causation_handlers = {
     ('IsCategory'): none_handler,
     ('RequestResponse'): none_handler,  # enforcer handles Art 15 response
     ('Contains'): none_handler,          # enforcer handles response content
-    ('Rectify'): none_handler,           # enforcer handles rectification
+    ('Rectify'): rectify_causation_handler,  # Art 16 rectification
     ('Record'): none_handler,            # enforcer handles recording the event
 }
 
@@ -694,6 +732,38 @@ def start_ingest_server(logger):
                         }).encode())
                         return
 
+                    # CASE 5: RequestRectification(uid, fid_old, fid_new) of Art 16
+                    elif kind == "RequestRectification":
+                        fid_old = (payload.get("fid_old") or payload.get("fid", "")).strip()
+                        fid_new = payload.get("fid_new", "").strip()
+                        if not uid or not fid_old or not fid_new:
+                            self.send_error(400, "missing uid, fid_old, or fid_new")
+                            return
+
+                        staging_path = Path(UPPER_DIR) / "_rectify_staging" / fid_new
+                        if not staging_path.exists():
+                            self.send_error(400, f"staged file {fid_new} not found")
+                            return
+
+                        evt = Event("RequestRectification", uid, fid_old, fid_new)
+                        logger.log([evt], threading.Event(), False)
+
+                        response_id = f"response_{uid}_{int(_time.time())}"
+                        resp_evt = Event("RequestResponse", uid, "rectification", response_id)
+                        logger.log([resp_evt], threading.Event(), False)
+
+                        # Perform rectification directly (enforcer causation bug workaround)
+                        rectify_causation_handler([{"name": "Rectify", "args": [fid_old, fid_new]}])
+
+                        self.send_response(200)
+                        self.end_headers()
+                        self.wfile.write(json.dumps({
+                            "ok": True,
+                            "message": f"RequestRectification logged: {fid_old} -> {fid_new}",
+                            "response_id": response_id
+                        }).encode())
+                        return
+
                     # CASE 4: Consent/Revoke or others (already handled)
                     # Create a generic Event, supporting any kind
                     # If purpose missing, drop it automatically
@@ -710,7 +780,22 @@ def start_ingest_server(logger):
                     self.end_headers()
                     self.wfile.write(b'{"ok": true, "message": "Event ingested/logged."}')
 
-                # --- Branch 2: handle user sync trigger ---
+                # --- Branch 2: handle rectification file upload (Art 16) ---
+                elif self.path == "/upload_rectification":
+                    content_b64 = payload.get("content_b64", "")
+                    filename = payload.get("filename", "").strip()
+                    if not content_b64 or not filename:
+                        self.send_error(400, "missing content_b64 or filename")
+                        return
+                    fid_new = f"{_uuid.uuid4().hex}_{filename}"
+                    staging_path = UPPER_DIR / "_rectify_staging" / fid_new
+                    staging_path.write_bytes(base64.b64decode(content_b64))
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"ok": True, "fid_new": fid_new}).encode())
+
+                # --- Branch 3: handle user sync trigger ---
                 elif self.path == "/sync_users":
                     try:
                         sync_users_from_external()

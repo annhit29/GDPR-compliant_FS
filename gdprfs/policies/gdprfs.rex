@@ -63,6 +63,11 @@ observable event RequestErasure
   exUid : user_id
   fid   : file_id
 
+observable event RequestRectification
+  exUid : user_id
+  fid_old : file_id
+  fid_new : file_id
+
 observable event UseNonPII
   fid   : file_id
   exUid : user_id
@@ -569,8 +574,16 @@ assume false UndueDelay
     """We do not wait to inform users."""
 
 #art16
-assume false HasInaccuracy
-    """We do not have any inaccurate data."""
+rule "r_RectificationRequest"
+  whenever
+    RequestRectification(ds, d, d')
+  refine
+    Request(ds, "rectification", "GDPRFS")
+    IsRectificationRequest("rectification", d, d')
+    HasInaccuracy(d)
+
+#assume false HasInaccuracy
+#    """We do not have any inaccurate data."""
 
 #Whenever the system writes (updates) data d,
 #we consider that a rectification request was made
@@ -584,9 +597,9 @@ assume false HasInaccuracy
 #  refine
 #    IsRectificationRequest("rectify", d, d)
 
-assume false IsRectificationRequest
-    """No rectification requests arise since HasInaccuracy is assumed false (no data is inaccurate).
-    No inaccuracies means no rectification requests."""
+#assume false IsRectificationRequest
+#    """No rectification requests arise since HasInaccuracy is assumed false (no data is inaccurate).
+#    No inaccuracies means no rectification requests."""
 
 #todo: supprimer <- data processing = Write event included too
 

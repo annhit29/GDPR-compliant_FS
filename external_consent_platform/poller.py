@@ -15,7 +15,7 @@ def poll_once():
     with open(TRACE, "a", encoding="utf-8") as f: # opens the file gdprfstrace.log in append mode, or creates it first automatically if it doesn’t exist yet
         for e in events:
             payload = {"kind": e["kind"]}
-            for key in ("uid", "purpose", "spCat", "fid"):
+            for key in ("uid", "purpose", "spCat", "fid", "fid_old", "fid_new"):
                 if key in e and e[key]:
                     payload[key] = e[key]
             requests.post("http://127.0.0.1:7000/ingest", json=payload)
