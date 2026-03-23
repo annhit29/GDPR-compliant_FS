@@ -152,29 +152,37 @@ def replay_from_consent_db(logger):
         rows = res.json()
         print(f"[INIT] Replaying {len(rows)} consent states into enforcer...")
 
+        # Only replay consent/revoke events — request events (RequestAccess,
+        # RequestErasure, RequestRectification) need extra fields (fid, fid_new)
+        # not stored in CurrentEventState, so skip them.
+        replayable = {"Consent", "Revoke", "SpecialConsent", "RevokeSpecialConsent"}
+
         for row in rows:
-            uid = row["uid"]
-            purpose = row["purpose"]
-            status = row["status"].lower()
+            try:
+                uid = row["uid"]
+                purpose = row["purpose"]
+                status = row["status"].lower()
 
-            ev_name = state_to_event.get(status)
+                ev_name = state_to_event.get(status)
 
-            if not ev_name:
-                print(f"[INIT] Unknown status: {status}, skipping...")
-                continue
+                if not ev_name:
+                    print(f"[INIT] Unknown status: {status}, skipping...")
+                    continue
 
-            expected_nb_args = len(schema.mapping.get(ev_name, [])) # number of args expected for an event (triggered by data subjects) to take (2 for Consent/Revoke, 1 for RequestAccess/RequestErasure)
+                if ev_name not in replayable:
+                    print(f"[INIT] Skipping non-replayable event {ev_name} for {uid}")
+                    continue
 
-            if ev_name in ("SpecialConsent", "RevokeSpecialConsent"):
-                # SpecialConsent / RevokeSpecialConsent have 3 args: (uid, purpose, spCat)
-                spCat = row.get("spCat", "")
-                evt = Event(ev_name, uid, purpose, spCat)
-            elif expected_nb_args == 2: # if event has 2 args (e.g. Consent, Revoke)
-                evt = Event(ev_name, uid, purpose)
-            else:
-                evt = Event(ev_name, uid) # it's 1 arg (e.g. RequestAccess, RequestErasure)
+                if ev_name in ("SpecialConsent", "RevokeSpecialConsent"):
+                    spCat = row.get("spCat", "")
+                    evt = Event(ev_name, uid, purpose, spCat)
+                else:
+                    evt = Event(ev_name, uid, purpose)
 
-            logger.log([evt], threading.Event(), False)
+                logger.log([evt], threading.Event(), False)
+                print(f"[INIT] Replayed {evt}")
+            except Exception as e:
+                print(f"[INIT] Warning: failed to replay row {row}: {e}")
         print("[INIT] Replay completed.")
 
     except Exception as e:
@@ -344,41 +352,49 @@ def events_for_read(path):
 
     print(f"[GDPR] Emitting {len(events)} Use events for {fid}: {[e.args for e in events]}")
 
-    # Co-emit SpecialData events if this file has Art 9 special categories in DB
-    events.extend(_special_data_events(fid, lookup_path, uids))
-
     return events
 
 
+# Track (fid, cat) pairs already logged to avoid duplicate SpecialData events
+# when FUSE issues multiple read() calls for the same open().
+# Cleared in open() so each new file open gets a fresh log.
+_special_data_logged = set()
+
 def _special_data_events(fid, abs_path, uids=None):
     """
-    Return SpecialData(fid, cat) events only for categories that actually apply
+    Return SpecialData(fid, cat) events for categories that actually apply
     to at least one linked data subject in this file/page and for which that
-    subject lacks special consent.
+    subject has valid special consent (i.e. the data is actually used, not REDACTED).
 
-    Due to a quantifier bug in the MFOTL Art 9 constraint (∃p.¬Exception22 instead of
-    ¬∃p.Exception22), we handle Art 9 enforcement here: only co-emit SpecialData events
-    when special consent is missing, so the enforcer correctly suppresses the Use/Write.
-    When special consent exists, we skip co-emission (Art 9 exception 9(2)(a) is satisfied)."""
+    This logs that special category data was accessed with proper consent,
+    for audit and compliance purposes.
+    Deduplicates: each (fid, cat) pair is only logged once per open() cycle."""
     cats_by_uid = _special_categories_by_uid_for_file(abs_path)
     if not cats_by_uid:
         return []
 
     uids = uids or []
-    unconsented_cats = set()
+    consented_cats = set()
 
     for uid in uids:
         for cat in cats_by_uid.get(uid, set()):
-            if not _check_special_consent(uid, cat):
-                unconsented_cats.add(cat)
+            if _check_special_consent(uid, cat):
+                consented_cats.add(cat)
 
-        if not unconsented_cats:
-            print(f"[GDPR Art9] All required person-specific special consents exist → skipping SpecialData co-emission")
-            return []
-        evts = [Event("SpecialData", fid, cat) for cat in unconsented_cats]
-        print(f"[GDPR Art9] Co-emitting {len(evts)} SpecialData events for {fid} (unconsented categories: {unconsented_cats})")
-        return evts
+    # Remove already-logged pairs
+    consented_cats -= {cat for cat in consented_cats if (fid, cat) in _special_data_logged}
 
+    if not consented_cats:
+        print(f"[GDPR Art9] No new consented special categories → skipping SpecialData emission")
+        return []
+
+    # Mark as logged
+    for cat in consented_cats:
+        _special_data_logged.add((fid, cat))
+
+    evts = [Event("SpecialData", fid, cat) for cat in consented_cats]
+    print(f"[GDPR Art9] Co-emitting {len(evts)} SpecialData events for {fid} (consented categories: {consented_cats})")
+    return evts
 
 # ========== SCHEMA ==========
 schema = Schema()
@@ -932,13 +948,14 @@ class MyFS(Fuse):
             fid, uids = _get_file_and_user(_upper(path))
             fid = fid or f"unknown-{os.path.basename(path)}"
             events = [Event('Write', fid, _current_session_purpose)]
-            # Co-emit SpecialData in the same logger.log() call (MFOTL timing requirement)
-            events.extend(_special_data_events(fid, _upper(path), uids))
             cau, sup, _, _ = logger.log(events, threading.Event(), False)
             if sup:
                 print(f"[GDPR] Write event for {path} was SUPPRESSED by enforcer")
             else:
                 print(f"[GDPR] Write event emitted for {path}")
+                special_evts = _special_data_events(fid, _upper(path), uids)
+                if special_evts:
+                    logger.log(special_evts, threading.Event(), False)
         except Exception as e:
             print(f"[GDPR] Warning: failed to emit Write event for {path}: {e}")
 
@@ -958,8 +975,11 @@ class MyFS(Fuse):
             fid = fid or f"unknown-{os.path.basename(path)}"
             if uids:
                 events = [Event('Collect', fid, uid) for uid in uids]
-                events.extend(_special_data_events(fid, _upper(path), uids))
                 cau, sup, _, _ = logger.log(events, threading.Event(), False)
+                if not sup:
+                    special_evts = _special_data_events(fid, _upper(path), uids)
+                    if special_evts:
+                        logger.log(special_evts, threading.Event(), False)
                 print(f"[GDPR] Collect events emitted for {path}: {list(uids)}")
             else:
                 print(f"[GDPR] No data subjects linked to {path}, skipping Collect")
@@ -1053,7 +1073,6 @@ class MyFS(Fuse):
                 continue
 
             events = [Event("Use", page_fid, uid) for uid in uids]
-            events.extend(_special_data_events(page_fid, abspath, uids))
 
             cau, sup, _, _ = logger.log(events, threading.Event(), False)
 
@@ -1064,6 +1083,9 @@ class MyFS(Fuse):
                 writer.add_page(red_reader.pages[0])
             else:
                 writer.add_page(page)
+                special_evts = _special_data_events(page_fid, abspath, uids)
+                if special_evts:
+                    logger.log(special_evts, threading.Event(), False)
 
         # 4) Serialize redacted PDF once
         buf = BytesIO()
@@ -1132,7 +1154,6 @@ class MyFS(Fuse):
             # Normal read: emit per-row Use events
             row_fid = f"{base_fid}/row-{idx}"
             events = [Event("Use", row_fid, uid) for uid in file_level_uids]
-            events.extend(_special_data_events(row_fid, abspath, file_level_uids))
 
             cau, sup, _, _ = logger.log(events, threading.Event(), False)
 
@@ -1141,6 +1162,9 @@ class MyFS(Fuse):
                 output.append(["REDACTED"] * len(row))
             else:
                 output.append(row)
+                special_evts = _special_data_events(row_fid, abspath, file_level_uids)
+                if special_evts:
+                    logger.log(special_evts, threading.Event(), False)
 
         # Serialize CSV back to bytes
         buf = StringIO()
@@ -1295,6 +1319,9 @@ class MyFS(Fuse):
     def open(self, path, flags):
         print("in open")
 
+        # Clear SpecialData dedup tracking for this new open cycle
+        _special_data_logged.clear()
+
         # allow access if the path exists in /upper
         p = _upper(path)
         if p.exists():
@@ -1379,7 +1406,6 @@ class MyFS(Fuse):
             
             # Build Use events for all uids
             events = [Event("Use", fid, uid) for uid in uids]
-            events.extend(_special_data_events(fid, p, uids))
 
             # Ask the enforcer whether reading should be suppressed
             cau, sup, _, _ = logger.log(events, threading.Event(), False)
@@ -1388,6 +1414,11 @@ class MyFS(Fuse):
                 print("[TXT] Suppressed → returning REDACTED")
                 red = b"REDACTED"
                 return red[offset: offset + size]  # respect offset+size like PDF/ODT
+
+            # Log SpecialData separately (not co-emitted) for audit
+            special_evts = _special_data_events(fid, p, uids)
+            if special_evts:
+                logger.log(special_evts, threading.Event(), False)
 
             # Otherwise → allow full file text
             with open(p, "rb") as f:
