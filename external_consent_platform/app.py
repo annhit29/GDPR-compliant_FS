@@ -155,6 +155,63 @@ def submit():
         db.session.commit()
     return redirect(url_for("index"))
 
+@app.route("/withdraw_and_erase", methods=["POST"])
+def withdraw_and_erase():
+    """
+    Art 17(1)(b): Withdraw all active consents (regular + special) then request erasure.
+    Creates Revoke / RevokeSpecialConsent events followed by a RequestErasure event,
+    with timestamps ordered so the poller processes withdrawals before the erasure request.
+    """
+    if "uid" not in session:
+        flash("You must log in first.")
+        return redirect(url_for("login"))
+
+    uid = session["uid"]
+    fid = request.form.get("fid", "").strip()
+    if not fid:
+        flash("File ID (fid) is required for erasure.")
+        return redirect(url_for("index"))
+
+    from datetime import timedelta
+    base_time = datetime.utcnow()
+    idx = 0
+
+    # 1. Revoke all active regular consents
+    active_consents = CurrentEventState.query.filter_by(
+        uid=uid, category="consent", status="consented"
+    ).all()
+    for row in active_consents:
+        e = Event(kind="Revoke", uid=uid, purpose=row.purpose, status="pending")
+        e.created_at = base_time + timedelta(microseconds=idx)
+        db.session.add(e)
+        row.status = "revoked"
+        row.updated_at = base_time + timedelta(microseconds=idx)
+        idx += 1
+
+    # 2. Revoke all active special consents (Art 9)
+    active_special = CurrentEventState.query.filter_by(
+        uid=uid, category="special_consent", status="special_consented"
+    ).all()
+    for row in active_special:
+        e = Event(kind="RevokeSpecialConsent", uid=uid, purpose=row.purpose,
+                  spCat=row.spCat, status="pending")
+        e.created_at = base_time + timedelta(microseconds=idx)
+        db.session.add(e)
+        row.status = "special_revoked"
+        row.updated_at = base_time + timedelta(microseconds=idx)
+        idx += 1
+
+    # 3. Request erasure (last, so all withdrawals are processed first)
+    erasure = Event(kind="RequestErasure", uid=uid, fid=fid, purpose="", status="pending")
+    erasure.created_at = base_time + timedelta(microseconds=idx)
+    db.session.add(erasure)
+
+    db.session.commit()
+
+    flash(f"Withdrew {len(active_consents)} consent(s) and {len(active_special)} special consent(s). "
+          f"Erasure requested for file {fid}.")
+    return redirect(url_for("index"))
+
 # --- Data request and download routes ---
 @app.route("/my_data")
 def my_data():

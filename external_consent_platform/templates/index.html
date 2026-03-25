@@ -68,10 +68,26 @@
     {% endfor %}
 
     {# Create buttons dynamically from YAML event names #}
-    {% for event in event_config %}
+    {% for event in event_config if event.name != "RequestErasure" %}
       <button name="action" value="{{ event.name }}">{{ event.name }}</button>
     {% endfor %}
   </form>
+
+  <h3>Withdraw All Consent & Request Erasure (Art 17(1)(b))</h3>
+  <form method="post" action="{{ url_for('withdraw_and_erase') }}">
+    <input name="fid" placeholder="Fid" required>
+    <button type="submit" style="background:#d9534f; color:white; border:none; padding:5px 10px; cursor:pointer;">
+      Withdraw All Consent & Request Erasure
+    </button>
+  </form>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for msg in messages %}
+        <p style="color:green; font-weight:bold;">{{ msg }}</p>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
 
   <h3>Recent Events</h3>
   <table>
