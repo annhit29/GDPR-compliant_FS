@@ -50,7 +50,7 @@ class PersonFileSpecialCategory(Base):
     file = relationship("File")
 
 class ProcessingRecord(Base):
-    """Art 30 — Records of processing activities.
+    """Art 30: Records of processing activities.
     Each row is one Record(pr, c, a, p, v) event caused by the enforcer."""
     __tablename__ = "processing_record"
     id = Column(Integer, primary_key=True, autoincrement=True)
