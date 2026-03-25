@@ -17,6 +17,7 @@ from instrlib.schema import Schema
 from instrlib.pep import PEP, InstrumentationMapping
 from instrlib.event import Event, Functional
 import os, shutil
+from datetime import datetime
 from pathlib import Path
 from gdprfs.db_utils import Session, sync_users_from_external, update_file_mapping_for_upper, update_file_metadata, mark_file_deleted, _is_temp_name
 from gdprfs.models import File, Person, PersonFileSpecialCategory
@@ -484,6 +485,26 @@ def rectify_causation_handler(event_list):
         # Re-run LLM analysis on rectified file
         run_llm_analysis_and_update_db(str(target_upper))
 
+def record_causation_handler(event_list):
+    """Called by enforcer when it causes Record(pr, c, a, p, v) (Art 30)."""
+    for event_json in event_list:
+        args = event_json.get("args", [])
+        if len(args) < 5:
+            print(f"[CAUSATION] Record with insufficient args: {args}, skipping")
+            continue
+        pr, c, a, p, v = args[0], args[1], args[2], args[3], args[4]
+        print(f"[CAUSATION] Enforcer caused Record({pr}, {c}, {a}, {p}, {v})")
+
+        with Session() as session:
+            from gdprfs.models import ProcessingRecord
+            record = ProcessingRecord(
+                processor=pr, controller=c, activity=a,
+                property=p, value=v,
+                timestamp=datetime.now().isoformat()
+            )
+            session.add(record)
+            session.commit()
+
 def none_handler(event_name, event_args, response, *args, **kwargs):
     """
     Python side  =/= Enforcer side
@@ -499,7 +520,7 @@ causation_handlers = {
     ('RequestResponse'): none_handler,  # enforcer handles Art 15 response
     ('Contains'): none_handler,          # enforcer handles response content
     ('Rectify'): rectify_causation_handler,  # Art 16 rectification
-    ('Record'): none_handler,            # enforcer handles recording the event
+    ('Record'): record_causation_handler,  # Art 30: persist records of processing activities
 }
 
 # ========== MAPPINGS ==========
