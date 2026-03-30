@@ -49,6 +49,18 @@ class PersonFileSpecialCategory(Base):
     person = relationship("Person")
     file = relationship("File")
 
+class ProcessingRecord(Base):
+    """Art 30: Records of processing activities.
+    Each row is one Record(pr, c, a, p, v) event caused by the enforcer."""
+    __tablename__ = "processing_record"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    processor = Column(String, nullable=False)
+    controller = Column(String, nullable=False)
+    activity = Column(String, nullable=False)
+    property = Column(String, nullable=False)
+    value = Column(String, nullable=False)
+    timestamp = Column(String, nullable=False)
+
 class NameAlias(Base):
     __tablename__ = "alias_person_map"
 

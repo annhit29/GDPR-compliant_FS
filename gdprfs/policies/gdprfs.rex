@@ -655,8 +655,12 @@ rule "r_IsSME"
     refine
         IsSME("GDPRFS")
 
-assume false IsRiskyProcessing
-    """None of the activities performed is likely to result to a high risk to the rights and freedoms of individual persons."""
+rule "r_IsRiskyProcessing"
+    """Processing special category data is considered risky for SMEs (Art 30(5) counter-exception)."""
+    whenever
+        SpecialData(d, spCat)
+    refine
+        IsRiskyProcessing("Use")
 
 assume false IsOccasionalProcessing
     """All processing is habitual, not occasional."""
