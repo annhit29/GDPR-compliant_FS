@@ -397,6 +397,17 @@ def _special_data_events(fid, abs_path, uids=None):
     print(f"[GDPR Art9] Co-emitting {len(evts)} SpecialData events for {fid} (consented categories: {consented_cats})")
     return evts
 
+def _emit_art30_records(activity):
+    """Art 30: manually cause Record events (enforcer causation bug workaround).
+    Called after SpecialData events are logged, since special data overrides the SME exemption."""
+    records = [
+        {"name": "Record", "args": ["GDPRFS", "GDPRFS", activity, "Controller", "GDPRFS"]},
+        {"name": "Record", "args": ["GDPRFS", "GDPRFS", activity, "DPO", "dpo@gdprfs.com"]},
+        {"name": "Record", "args": ["GDPRFS", "GDPRFS", activity, "Purpose", _current_session_purpose]},
+        {"name": "Record", "args": ["GDPRFS", "GDPRFS", activity, "SecurityMeasures", "Access control, consent-aware enforcement, purpose limitation"]},
+    ]
+    threading.Thread(target=record_causation_handler, args=(records,), daemon=True).start()
+
 # ========== SCHEMA ==========
 schema = Schema()
 schema.add("UseNonPII", [str, str]) # for reads of non-PII files
@@ -977,6 +988,7 @@ class MyFS(Fuse):
                 special_evts = _special_data_events(fid, _upper(path), uids)
                 if special_evts:
                     logger.log(special_evts, threading.Event(), False)
+                    _emit_art30_records("Write")  # Art 30 workaround: Write is also DataProcessing("Use")
         except Exception as e:
             print(f"[GDPR] Warning: failed to emit Write event for {path}: {e}")
 
@@ -1001,6 +1013,7 @@ class MyFS(Fuse):
                     special_evts = _special_data_events(fid, _upper(path), uids)
                     if special_evts:
                         logger.log(special_evts, threading.Event(), False)
+                        _emit_art30_records("Collect")  # Art 30 workaround
                 print(f"[GDPR] Collect events emitted for {path}: {list(uids)}")
             else:
                 print(f"[GDPR] No data subjects linked to {path}, skipping Collect")
@@ -1107,6 +1120,7 @@ class MyFS(Fuse):
                 special_evts = _special_data_events(page_fid, abspath, uids)
                 if special_evts:
                     logger.log(special_evts, threading.Event(), False)
+                    _emit_art30_records("Use")  # Art 30 workaround
 
         # 4) Serialize redacted PDF once
         buf = BytesIO()
@@ -1186,6 +1200,7 @@ class MyFS(Fuse):
                 special_evts = _special_data_events(row_fid, abspath, file_level_uids)
                 if special_evts:
                     logger.log(special_evts, threading.Event(), False)
+                    _emit_art30_records("Use")  # Art 30 workaround
 
         # Serialize CSV back to bytes
         buf = StringIO()
@@ -1440,6 +1455,7 @@ class MyFS(Fuse):
             special_evts = _special_data_events(fid, p, uids)
             if special_evts:
                 logger.log(special_evts, threading.Event(), False)
+                _emit_art30_records("Use")  # Art 30 workaround
 
             # Otherwise → allow full file text
             with open(p, "rb") as f:
