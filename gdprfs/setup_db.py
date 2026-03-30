@@ -14,9 +14,7 @@ if not session.query(Person).count():  # only initialize once
         {"first_name": "Wei-En", "last_name": "Hsieh"},
         {"first_name": "John", "last_name": "Doe"},
         {"first_name": "David", "last_name": "Basin"},
-        {"first_name": "Alan", "last_name": "Turing"},
-        # {"first_name": "John", "last_name": "Dao"},
-        # {"first_name": "Pierre", "last_name": "John"},
+        {"first_name": "Zara", "last_name": "Kowalski"}
     ]
 
     for user in potential_users:
