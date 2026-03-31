@@ -272,7 +272,7 @@ class BaselineWorkflow:
 
             # Step 11: Reopen + read (Use3)
             t11 = time.perf_counter()
-            with open(renamed, "rb") as rf:
+            with open(renamed, "rb") as rf: #with open to ensure file is closed automatically after read
                 rf.read()
             t_use3 = time.perf_counter() - t11
 
