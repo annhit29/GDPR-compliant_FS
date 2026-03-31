@@ -43,6 +43,7 @@ MERGE_ALERT_FILE = BASE_DIR / "merge_alerts.json"
 DEFAULT_PDF = Path.home() / "Downloads" / "fhublet_collect_5wf2.pdf"
 TEST_FILENAME = "fhublet_collect_5wf2.pdf"
 RENAMED_FILENAME = "fhublet_collection_5wf2.pdf"
+WRITE_PDF = Path.home() / "Downloads" / "fhublet_collection_5wf2.pdf"
 
 import requests
 
@@ -180,6 +181,8 @@ def preflight_checks(mode: str, pdf_path: Path):
     """Verify preconditions for the given mode. Raises RuntimeError on failure."""
     if not pdf_path.exists():
         raise RuntimeError(f"Source PDF not found: {pdf_path}")
+    if not WRITE_PDF.exists():
+        raise RuntimeError(f"Write-step PDF not found: {WRITE_PDF}")
 
     if mode == "baseline":
         return  # no services needed
@@ -250,7 +253,53 @@ class BaselineWorkflow:
             os.rename(copied, os.path.join(tmp_dir, RENAMED_FILENAME))
             t_rename = time.perf_counter() - t7
 
-            # Step 8: StopSession (no-op)
+            # Step 8: Re-open + read the renamed file (Use2)
+            renamed = os.path.join(tmp_dir, RENAMED_FILENAME)
+            t8 = time.perf_counter()
+            f = open(renamed, "rb")
+            f.read()
+            t_use2 = time.perf_counter() - t8
+
+            # Step 9: Close the file
+            t9 = time.perf_counter()
+            f.close()
+            t_close2 = time.perf_counter() - t9
+
+            # Step 10: Write (overwrite with WRITE_PDF)
+            t10 = time.perf_counter()
+            shutil.copy2(str(WRITE_PDF), renamed)
+            t_write = time.perf_counter() - t10
+
+            # Step 11: Reopen + read (Use3)
+            t11 = time.perf_counter()
+            with open(renamed, "rb") as rf:
+                rf.read()
+            t_use3 = time.perf_counter() - t11
+
+            # Step 12: Revoke (no-op)
+            t_revoke = 0.0
+
+            # Step 13: Read after revoke (no-op, baseline has no enforcement)
+            t_use_revoked = 0.0
+
+            # Step 13b: Close after revoke (no-op)
+            t_close3 = 0.0  # no-op, file already closed
+
+            # Step 14: Re-consent (no-op)
+            t_reconsent = 0.0
+
+            # Step 15: Read after re-consent, it's still a read
+            t15 = time.perf_counter()
+            with open(renamed, "rb") as rf:
+                rf.read()
+            t_use4 = time.perf_counter() - t15
+            
+            # Step 16: Delete the file
+            t16 = time.perf_counter()
+            os.unlink(renamed)
+            t_delete = time.perf_counter() - t16
+
+            # Step 17: StopSession (no-op)
             t_stop_session = 0.0
 
             t_total = time.perf_counter() - t0
@@ -265,6 +314,16 @@ class BaselineWorkflow:
             "t_use": t_use,
             "t_close": t_close,
             "t_rename": t_rename,
+            "t_use2": t_use2,
+            "t_close2": t_close2,
+            "t_write": t_write,
+            "t_use3": t_use3,
+            "t_revoke": t_revoke,
+            "t_use_revoked": t_use_revoked,
+            "t_close3": t_close3,
+            "t_reconsent": t_reconsent,
+            "t_use4": t_use4,
+            "t_delete": t_delete,
             "t_stop_session": t_stop_session,
             "t_total": t_total,
         }
@@ -340,10 +399,84 @@ class GDPRWorkflow:
         os.rename(dest, FUSE_MOUNT / RENAMED_FILENAME)
         t_rename = time.perf_counter() - t7
 
-        # Step 8: StopSession
+        # Step 8: Re-open + read the renamed file (Use2)
+        renamed = FUSE_MOUNT / RENAMED_FILENAME
         t8 = time.perf_counter()
+        f = open(renamed, "rb")
+        f.read()
+        t_use2 = time.perf_counter() - t8
+
+        # Step 9: Close the file
+        t9 = time.perf_counter()
+        f.close()
+        t_close2 = time.perf_counter() - t9
+
+        # Step 10: Write (overwrite with WRITE_PDF)
+        # Mimic editor pattern: write to temp file, then rename → triggers Write + Collect
+        t10 = time.perf_counter()
+        tmp_name = FUSE_MOUNT / ".goutputstream-bench"
+        write_data = WRITE_PDF.read_bytes()
+        tmp_name.write_bytes(write_data)
+        os.unlink(str(renamed))
+        os.rename(str(tmp_name), str(renamed))
+        t_write = time.perf_counter() - t10
+
+        # Step 11: Reopen + read (Use3)
+        t11 = time.perf_counter()
+        with open(renamed, "rb") as rf:
+            content = rf.read()
+        t_use3 = time.perf_counter() - t11
+        print(f"\n        [Step 11] Content after write:\n{subprocess.run(['pdftotext', '-layout', str(renamed), '-'], capture_output=True, text=True).stdout.strip()}")
+
+        # Step 12: Revoke consent
+        t12 = time.perf_counter()
+        fuse_ingest("Revoke", uid="fhublet", purpose="marketing")
+        update_consent_db("fhublet", "marketing", "revoked")
+        t_revoke = time.perf_counter() - t12
+
+        # Step 13: Open + read after revoke (Use suppressed → REDACTED)
+        t13 = time.perf_counter()
+        with open(renamed, "rb") as rf:
+            content = rf.read()
+        t_use_revoked = time.perf_counter() - t13
+        # The FUSE layer returns a redacted PDF (blank/template page), not literal b"REDACTED".
+        # Verify by extracting text — should contain "REDACTED" or be empty (blank page fallback).
+        revoked_text = subprocess.run(
+            ["pdftotext", "-layout", str(renamed), "-"],
+            capture_output=True, text=True
+        ).stdout.strip()
+        assert "fhublet" not in revoked_text.lower(), (
+            f"Expected redacted content after revoke, but found DS data: {revoked_text[:100]!r}"
+        )
+
+        # Step 13b: Close after revoke
+        t13b = time.perf_counter()
+        with open(renamed, "rb") as rf:
+            rf.close()
+        t_close_revoked = time.perf_counter() - t13b
+
+
+        # Step 14: Re-consent
+        t14 = time.perf_counter()
+        fuse_ingest("Consent", uid="fhublet", purpose="marketing")
+        update_consent_db("fhublet", "marketing", "consented")
+        t_reconsent = time.perf_counter() - t14
+
+        # Step 15: Open + read after re-consent (Use4 → real content)
+        t15 = time.perf_counter()
+        with open(renamed, "rb") as rf:
+            rf.read()
+        t_use4 = time.perf_counter() - t15
+
+        # Step 16: Delete the file
+        t16 = time.perf_counter()
+        os.unlink(str(renamed))
+        t_delete = time.perf_counter() - t16
+
+        # Step 17: StopSession
+        t17 = time.perf_counter()
         fuse_ingest("StopSession", uid="achao")
-        t_stop_session = time.perf_counter() - t8
+        t_stop_session = time.perf_counter() - t17
 
         t_total = time.perf_counter() - t0
 
@@ -355,6 +488,15 @@ class GDPRWorkflow:
             "t_use": t_use,
             "t_close": t_close,
             "t_rename": t_rename,
+            "t_use2": t_use2,
+            "t_close2": t_close2,
+            "t_write": t_write,
+            "t_use3": t_use3,
+            "t_revoke": t_revoke,
+            "t_use_revoked": t_use_revoked,
+            "t_reconsent": t_reconsent,
+            "t_use4": t_use4,
+            "t_delete": t_delete,
             "t_stop_session": t_stop_session,
             "t_total": t_total,
         }
@@ -400,7 +542,10 @@ class BenchmarkRunner:
 
 class BenchmarkReporter:
     STEPS = ["t_start_session", "t_consent", "t_copy", "t_merge_resolve",
-             "t_use", "t_close", "t_rename", "t_stop_session", "t_total"]
+             "t_use", "t_close", "t_rename",
+             "t_use2", "t_close2", "t_write", "t_use3",
+             "t_revoke", "t_use_revoked", "t_reconsent", "t_use4", "t_delete",
+             "t_stop_session", "t_total"]
 
     def __init__(self, all_results: dict, output_dir: str):
         self.all_results = all_results  # mode -> list of timing dicts
