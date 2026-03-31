@@ -42,6 +42,7 @@ MERGE_ALERT_FILE = BASE_DIR / "merge_alerts.json"
 
 DEFAULT_PDF = Path.home() / "Downloads" / "fhublet_collect_5wf2.pdf"
 TEST_FILENAME = "fhublet_collect_5wf2.pdf"
+RENAMED_FILENAME = "fhublet_collection_5wf2.pdf"
 
 import requests
 
@@ -125,7 +126,9 @@ def cleanup_iteration():
     """Remove test artifacts between benchmark runs."""
     # 1. Remove the PDF from FUSE mount and storage dirs (may need root)
     for p in (UPPER_DIR / TEST_FILENAME, MIRROR_DIR / TEST_FILENAME,
-              FUSE_MOUNT / TEST_FILENAME):
+              FUSE_MOUNT / TEST_FILENAME,
+              UPPER_DIR / RENAMED_FILENAME, MIRROR_DIR / RENAMED_FILENAME,
+              FUSE_MOUNT / RENAMED_FILENAME):
         # Use sudo rm directly to avoid PermissionError on .exists() for root-owned dirs
         subprocess.run(["sudo", "rm", "-f", str(p)],
                        check=False, capture_output=True)
@@ -135,16 +138,17 @@ def cleanup_iteration():
         conn = sqlite3.connect(str(GDPRFS_DB))
         cur = conn.cursor()
         # Find file row
-        row = cur.execute(
-            "SELECT id FROM file WHERE file_id=?", (TEST_FILENAME,)
-        ).fetchone()
-        if row:
-            fid = row[0]
-            cur.execute("DELETE FROM person_file_map WHERE file_id=?", (fid,))
-            cur.execute(
-                "DELETE FROM person_file_special_category WHERE file_id=?", (fid,)
-            )
-            cur.execute("DELETE FROM file WHERE id=?", (fid,))
+        for filename in (TEST_FILENAME, RENAMED_FILENAME):
+            row = cur.execute(
+                "SELECT id FROM file WHERE file_id=?", (filename,)
+            ).fetchone()
+            if row:
+                fid = row[0]
+                cur.execute("DELETE FROM person_file_map WHERE file_id=?", (fid,))
+                cur.execute(
+                    "DELETE FROM person_file_special_category WHERE file_id=?", (fid,)
+                )
+                cur.execute("DELETE FROM file WHERE id=?", (fid,))
         # Remove any alias entries created by this test
         cur.execute("DELETE FROM alias_person_map WHERE alias IN ('hublet')")
         # Remove unregistered Person entries (ghost entries from LLM)
@@ -229,7 +233,24 @@ class BaselineWorkflow:
             # Step 4: Merge resolution (no-op)
             t_merge_resolve = 0.0
 
-            # Step 5: StopSession (no-op)
+            # Step 5: Open + read the file (Use)
+            copied = os.path.join(tmp_dir, TEST_FILENAME)
+            t5 = time.perf_counter()
+            f = open(copied, "rb")
+            f.read()
+            t_use = time.perf_counter() - t5
+
+            # Step 6: Close the file
+            t6 = time.perf_counter()
+            f.close()
+            t_close = time.perf_counter() - t6
+
+            # Step 7: Rename the file (Collect)
+            t7 = time.perf_counter()
+            os.rename(copied, os.path.join(tmp_dir, RENAMED_FILENAME))
+            t_rename = time.perf_counter() - t7
+
+            # Step 8: StopSession (no-op)
             t_stop_session = 0.0
 
             t_total = time.perf_counter() - t0
@@ -241,6 +262,9 @@ class BaselineWorkflow:
             "t_consent": t_consent,
             "t_copy": t_copy,
             "t_merge_resolve": t_merge_resolve,
+            "t_use": t_use,
+            "t_close": t_close,
+            "t_rename": t_rename,
             "t_stop_session": t_stop_session,
             "t_total": t_total,
         }
@@ -299,10 +323,27 @@ class GDPRWorkflow:
             resolve_merge_alerts()
         t_merge_resolve = time.perf_counter() - t4
 
-        # Step 5: StopSession
+        # Step 5: Open + read the file (Use)
+        dest = FUSE_MOUNT / TEST_FILENAME
         t5 = time.perf_counter()
+        f = open(dest, "rb")
+        f.read()
+        t_use = time.perf_counter() - t5
+
+        # Step 6: Close the file
+        t6 = time.perf_counter()
+        f.close()
+        t_close = time.perf_counter() - t6
+
+        # Step 7: Rename the file (Collect)
+        t7 = time.perf_counter()
+        os.rename(dest, FUSE_MOUNT / RENAMED_FILENAME)
+        t_rename = time.perf_counter() - t7
+
+        # Step 8: StopSession
+        t8 = time.perf_counter()
         fuse_ingest("StopSession", uid="achao")
-        t_stop_session = time.perf_counter() - t5
+        t_stop_session = time.perf_counter() - t8
 
         t_total = time.perf_counter() - t0
 
@@ -311,6 +352,9 @@ class GDPRWorkflow:
             "t_consent": t_consent,
             "t_copy": t_copy,
             "t_merge_resolve": t_merge_resolve,
+            "t_use": t_use,
+            "t_close": t_close,
+            "t_rename": t_rename,
             "t_stop_session": t_stop_session,
             "t_total": t_total,
         }
@@ -356,7 +400,7 @@ class BenchmarkRunner:
 
 class BenchmarkReporter:
     STEPS = ["t_start_session", "t_consent", "t_copy", "t_merge_resolve",
-             "t_stop_session", "t_total"]
+             "t_use", "t_close", "t_rename", "t_stop_session", "t_total"]
 
     def __init__(self, all_results: dict, output_dir: str):
         self.all_results = all_results  # mode -> list of timing dicts
