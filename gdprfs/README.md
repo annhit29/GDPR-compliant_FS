@@ -214,3 +214,18 @@ then ctrl+O, Enter, ctrl+X
 todo: cont:
 Now, make it dynamic, i.e.
 Internal users can declare or remove file/folder owners at runtime, through your Flask API (internal consent platform), **without restarting the FUSE daemon.**
+
+
+
+---
+# Benchmark: measure the time used for each workflow
+
+1. Baseline: workflow time without GDPR (just the FileSystem), no LLM
+2. With GDPR compliance (with GDPR FileSystem), no LLM
+3. With GDPR compliance (with GDPR FileSystem), with LLM
+
+## article5 workflow2 benchmark command:
+```
+# Run all 3 modes, 2 iterations each
+python3 -m benchmark.art5_perf_test --mode all --n 2
+```
