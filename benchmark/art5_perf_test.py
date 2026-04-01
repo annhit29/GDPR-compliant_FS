@@ -282,9 +282,6 @@ class BaselineWorkflow:
             # Step 13: Read after revoke (no-op, baseline has no enforcement)
             t_use_revoked = 0.0
 
-            # Step 13b: Close after revoke (no-op)
-            t_close3 = 0.0  # no-op, file already closed
-
             # Step 14: Re-consent (no-op)
             t_reconsent = 0.0
 
@@ -320,7 +317,6 @@ class BaselineWorkflow:
             "t_use3": t_use3,
             "t_revoke": t_revoke,
             "t_use_revoked": t_use_revoked,
-            "t_close3": t_close3,
             "t_reconsent": t_reconsent,
             "t_use4": t_use4,
             "t_delete": t_delete,
@@ -448,13 +444,6 @@ class GDPRWorkflow:
         assert "fhublet" not in revoked_text.lower(), (
             f"Expected redacted content after revoke, but found DS data: {revoked_text[:100]!r}"
         )
-
-        # Step 13b: Close after revoke
-        t13b = time.perf_counter()
-        with open(renamed, "rb") as rf:
-            rf.close()
-        t_close_revoked = time.perf_counter() - t13b
-
 
         # Step 14: Re-consent
         t14 = time.perf_counter()
