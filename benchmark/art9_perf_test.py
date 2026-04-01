@@ -378,23 +378,23 @@ class BaselineWorkflow:
             t23 = time.perf_counter()
             with open(f2, "rb") as f:
                 f.read()
-            t_use_after_rename = time.perf_counter() - t23
+            t_use_fhublet_no_consent_after_rename = time.perf_counter() - t23
 
-            # Step 24: Write TEXT_CONTENT_3
-            t24 = time.perf_counter()
-            with open(f2, "w") as f:
-                f.write(TEXT_CONTENT_3)
-            t_write3 = time.perf_counter() - t24
+            # Steps 24-25: Consent fhublet (no-op)
+            t_consent_fhublet = 0.0
+            t_spconsent_fhublet_racial = 0.0
 
-            # Step 26: Read
+            # Step 26: Read renamed file
             t26 = time.perf_counter()
             with open(f2, "rb") as f:
                 f.read()
-            t_use_fhublet_no_consent = time.perf_counter() - t26
+            t_use_fhublet_consent_and_spconsent = time.perf_counter() - t26
 
-            # Steps 27-28: Consent fhublet (no-op)
-            t_consent_fhublet = 0.0
-            t_spconsent_fhublet_racial = 0.0
+            # Step 28: Write TEXT_CONTENT_3
+            t28 = time.perf_counter()
+            with open(f2, "w") as f:
+                f.write(TEXT_CONTENT_3)
+            t_write3 = time.perf_counter() - t28
 
             # Step 29: Read
             t29 = time.perf_counter()
@@ -447,11 +447,11 @@ class BaselineWorkflow:
             "t_spconsent_whsieh_racial": t_spconsent_whsieh_racial,
             "t_use_all_spcats": t_use_all_spcats,
             "t_rename": t_rename,
-            "t_use_after_rename": t_use_after_rename,
-            "t_write3": t_write3,
-            "t_use_fhublet_no_consent": t_use_fhublet_no_consent,
+            "t_use_fhublet_no_consent_after_rename": t_use_fhublet_no_consent_after_rename,
             "t_consent_fhublet": t_consent_fhublet,
             "t_spconsent_fhublet_racial": t_spconsent_fhublet_racial,
+            "t_use_fhublet_consent_and_spconsent": t_use_fhublet_consent_and_spconsent,
+            "t_write3": t_write3,
             "t_use_fhublet_consented": t_use_fhublet_consented,
             "t_write4": t_write4,
             "t_revoke_sp_whsieh": t_revoke_sp_whsieh,
@@ -654,95 +654,95 @@ class GDPRWorkflow:
         os.rename(str(f1), str(f2))
         t_rename = time.perf_counter() - t22
 
-        # Step 23: Read renamed file — Use+SpecialData logged
+        # Step 23: Read — fhublet lacks consent + racial_ethnic spConsent → REDACTED
         t23 = time.perf_counter()
         with open(f2, "rb") as f:
             content = f.read()
-        t_use_after_rename = time.perf_counter() - t23
-        print(f"        [Step 23] Content after rename: {content[:80]!r}") #todo: should be real content, but why REDACTED?
+        t_use_fhublet_no_consent_after_rename = time.perf_counter() - t23
+        assert content == b"REDACTED", (
+            f"Step 23: expected REDACTED (fhublet no consent), got {content[:50]!r}"
+        )
 
-        # Step 24: Write TEXT_CONTENT_3 via temp+rename (LLM detects fhublet+racial_ethnic)
-        t24 = time.perf_counter()
+        # Step 25: fhublet Consent
+        t25 = time.perf_counter()
+        fuse_ingest("Consent", uid="fhublet", purpose="marketing")
+        update_consent_db("fhublet", "marketing", "consented")
+        t_consent_fhublet = time.perf_counter() - t25
+
+        # Step 26: fhublet SpecialConsent racial_ethnic
+        t26 = time.perf_counter()
+        fuse_ingest("SpecialConsent", uid="fhublet", purpose="marketing", spCat="racial_ethnic")
+        update_special_consent_db("fhublet", "marketing", "racial_ethnic", "special_consented")
+        t_spconsent_fhublet_racial = time.perf_counter() - t26
+
+        # Step 27: Read renamed file — Use+SpecialData logged
+        t27 = time.perf_counter()
+        with open(f2, "rb") as f:
+            content = f.read()
+        t_use_fhublet_consent_and_spconsent = time.perf_counter() - t27
+        print(f"        [Step 27] Content after rename: {content[:80]!r}") 
+
+        # Step 28: Write TEXT_CONTENT_3 via temp+rename (LLM detects fhublet+racial_ethnic)
+        t28 = time.perf_counter()
         _write_via_temp_rename(f2, TEXT_CONTENT_3.encode())
         if self.with_llm:
             time.sleep(2)
-        t_write3 = time.perf_counter() - t24
+        t_write3 = time.perf_counter() - t28
 
-        # Step 26: Read — fhublet lacks consent + racial_ethnic spConsent → REDACTED
-        t26 = time.perf_counter()
+        # Step 30: Read — all consented → real content
+        t30 = time.perf_counter()
         with open(f2, "rb") as f:
             content = f.read()
-        t_use_fhublet_no_consent = time.perf_counter() - t26
-        assert content == b"REDACTED", (
-            f"Step 26: expected REDACTED (fhublet no consent), got {content[:50]!r}"
-        )
-
-        # Step 27: fhublet Consent
-        t27 = time.perf_counter()
-        fuse_ingest("Consent", uid="fhublet", purpose="marketing")
-        update_consent_db("fhublet", "marketing", "consented")
-        t_consent_fhublet = time.perf_counter() - t27
-
-        # Step 28: fhublet SpecialConsent racial_ethnic
-        t28 = time.perf_counter()
-        fuse_ingest("SpecialConsent", uid="fhublet", purpose="marketing", spCat="racial_ethnic")
-        update_special_consent_db("fhublet", "marketing", "racial_ethnic", "special_consented")
-        t_spconsent_fhublet_racial = time.perf_counter() - t28
-
-        # Step 29: Read — all consented → real content
-        t29 = time.perf_counter()
-        with open(f2, "rb") as f:
-            content = f.read()
-        t_use_fhublet_consented = time.perf_counter() - t29
+        t_use_fhublet_consented = time.perf_counter() - t30
         if self.with_llm:
             assert content == TEXT_CONTENT_3.encode(), (
-                f"Step 29: expected TEXT_CONTENT_3, got {content[:80]!r}"
+                f"Step 30: expected TEXT_CONTENT_3, got {content[:80]!r}"
             )
-        print(f"        [Step 29] Content: {content[:80]!r}")
+        print(f"        [Step 30] Content: {content[:80]!r}")
 
-        # Step 30: Write TEXT_CONTENT_3_MODIFIED (add ":D")
-        t30 = time.perf_counter()
+        # Step 31: Write TEXT_CONTENT_3_MODIFIED (add ":D")
+        t31 = time.perf_counter()
         _write_via_temp_rename(f2, TEXT_CONTENT_3_MODIFIED.encode())
         if self.with_llm:
             time.sleep(2)
-        t_write4 = time.perf_counter() - t30
+        t_write4 = time.perf_counter() - t31
 
-        # Step 32: whsieh RevokeSpecialConsent genetic
-        t32 = time.perf_counter()
+        # Step 33: whsieh RevokeSpecialConsent genetic
+        t33 = time.perf_counter()
         fuse_ingest("RevokeSpecialConsent", uid="whsieh", purpose="marketing", spCat="genetic")
         update_special_consent_db("whsieh", "marketing", "genetic", "special_revoked")
-        t_revoke_sp_whsieh = time.perf_counter() - t32
+        t_revoke_sp_whsieh = time.perf_counter() - t33
 
-        # Step 33: Read — whsieh lacks genetic → REDACTED
-        t33 = time.perf_counter()
+        # Step 34: Read — whsieh lacks genetic → REDACTED
+        t34 = time.perf_counter()
         with open(f2, "rb") as f:
             content = f.read()
-        t_use_after_sp_revoke = time.perf_counter() - t33
+        t_use_after_sp_revoke = time.perf_counter() - t34
         assert content == b"REDACTED", (
-            f"Step 33: expected REDACTED (whsieh genetic revoked), got {content[:50]!r}"
+            f"Step 34: expected REDACTED (whsieh genetic revoked), got {content[:50]!r}"
         )
 
-        # Step 34: whsieh SpecialConsent genetic (re-consent)
-        t34 = time.perf_counter()
+        # Step 35: whsieh SpecialConsent genetic (re-consent)
+        t35 = time.perf_counter()
         fuse_ingest("SpecialConsent", uid="whsieh", purpose="marketing", spCat="genetic")
         update_special_consent_db("whsieh", "marketing", "genetic", "special_consented")
-        t_reconsent_sp_whsieh = time.perf_counter() - t34
+        t_reconsent_sp_whsieh = time.perf_counter() - t35
 
-        # Step 35: Read — all consented again → real content
-        t35 = time.perf_counter()
+        # Step 36: Read — all consented again → real content
+        t36 = time.perf_counter()
         with open(f2, "rb") as f:
             content = f.read()
-        t_use_after_sp_reconsent = time.perf_counter() - t35
+        t_use_after_sp_reconsent = time.perf_counter() - t36
         if self.with_llm:
             assert content == TEXT_CONTENT_3_MODIFIED.encode(), (
-                f"Step 35: expected TEXT_CONTENT_3_MODIFIED, got {content[:80]!r}"
+                f"Step 36: expected TEXT_CONTENT_3_MODIFIED, got {content[:80]!r}"
             )
-        print(f"        [Step 35] Content: {content[:80]!r}")
+        print(f"        [Step 36] Content: {content[:80]!r}")
 
-        # Step 36: StopSession
-        t36 = time.perf_counter()
+        # Step 37: StopSession
+        t37 = time.perf_counter()
         fuse_ingest("StopSession", uid="achao")
-        t_stop_session = time.perf_counter() - t36
+        t_stop_session = time.perf_counter() - t37
 
         t_total = time.perf_counter() - t0
 
@@ -767,11 +767,11 @@ class GDPRWorkflow:
             "t_spconsent_whsieh_racial": t_spconsent_whsieh_racial,
             "t_use_all_spcats": t_use_all_spcats,
             "t_rename": t_rename,
-            "t_use_after_rename": t_use_after_rename,
-            "t_write3": t_write3,
-            "t_use_fhublet_no_consent": t_use_fhublet_no_consent,
+            "t_use_fhublet_no_consent_after_rename": t_use_fhublet_no_consent_after_rename,
             "t_consent_fhublet": t_consent_fhublet,
             "t_spconsent_fhublet_racial": t_spconsent_fhublet_racial,
+            "t_use_fhublet_consent_and_spconsent": t_use_fhublet_consent_and_spconsent,
+            "t_write3": t_write3,
             "t_use_fhublet_consented": t_use_fhublet_consented,
             "t_write4": t_write4,
             "t_revoke_sp_whsieh": t_revoke_sp_whsieh,
@@ -833,9 +833,10 @@ class BenchmarkReporter:
         "t_spconsent_jdoe_bio_health", "t_use_whsieh_missing",
         "t_spconsent_whsieh_racial", "t_use_all_spcats",
         "t_rename",
-        "t_use_after_rename",
-        "t_write3", "t_use_fhublet_no_consent",
+        "t_use_fhublet_no_consent_after_rename",
         "t_consent_fhublet", "t_spconsent_fhublet_racial",
+        "t_use_fhublet_consent_and_spconsent",
+        "t_write3",
         "t_use_fhublet_consented",
         "t_write4",
         "t_revoke_sp_whsieh", "t_use_after_sp_revoke",
