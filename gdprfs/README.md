@@ -250,21 +250,16 @@ python3 -m benchmark.art5_perf_test --mode all --n 2
 python3 -m benchmark.art9_perf_test --mode all --n 2
 ```
 
-### article 15 workflow 1 (DS with files)
-python3 -m benchmark.art15_perf_test --workflow 1 --mode all --n 5
+### article 15 
+workflow 1 (DS with files) -> Output files: art15_wf1_perf_results.csv and matching charts.
 
+workflow 2 (DS with no files) -> Output files: art15_wf2_perf_results.csv and matching charts.
 
-If GDPR without LLM:
 ```
-python3 -m benchmark.art15_perf_test --workflow 1 --mode gdpr_no_llm --n 1
+python3 -m benchmark.art15_perf_test --workflow all --mode all --n 2
 ```
 
-Output files: art15_wf1_perf_results.csv and matching charts.
-
-### article 15 workflow 2 (DS with no files)
-python3 -m benchmark.art15_perf_test --mode all --n 2
 
 
-~~python3 -m benchmark.art15_perf_test --workflow 2 --mode all --n 5~~
 
-Output files: art15_wf2_perf_results.csv and matching charts.
+
