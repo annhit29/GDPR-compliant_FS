@@ -216,6 +216,20 @@ Now, make it dynamic, i.e.
 Internal users can declare or remove file/folder owners at runtime, through your Flask API (internal consent platform), **without restarting the FUSE daemon.**
 
 
+# The Data Subjects
+
+| uid       | first_name | last_name | pwd |
+| --------- | ---------- | --------- | --- |
+| fhublet   | François   | Hublet    | fh  |
+| whsieh    | Wei-En     | Hsieh     | weh |
+| jdoe      | John       | Doe       | jd  |
+| dbasin    | David      | Basin     | db  |
+| zkowalski | Zara       | Kowalski  | zk  |
+
+# The internal user
+| uid       | first_name | last_name | pwd  |
+| --------- | ---------- | --------- | ---- |
+| achao     | An-Chu     | Chao      | acc  |
 
 ---
 # Benchmark: measure the time used for each workflow
@@ -260,6 +274,6 @@ python3 -m benchmark.art15_perf_test --workflow all --mode all --n 2
 ```
 
 
-
+### article 17
 
 
