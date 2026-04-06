@@ -226,6 +226,17 @@ Internal users can declare or remove file/folder owners at runtime, through your
 
 except for article 9 which uses LLM to detect special data and their categories: measurement 2 skipped.
 
+
+```
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
+./setup_fuse_env.sh 
+./reset_myfs_sudo.sh 
+./run_all.sh 
+sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
+
+```
+THEN
+
 ## benchmark command
 ### article 5 workflow 2
 ```
@@ -239,3 +250,21 @@ python3 -m benchmark.art5_perf_test --mode all --n 2
 python3 -m benchmark.art9_perf_test --mode all --n 2
 ```
 
+### article 15 workflow 1 (DS with files)
+python3 -m benchmark.art15_perf_test --workflow 1 --mode all --n 5
+
+
+If GDPR without LLM:
+```
+python3 -m benchmark.art15_perf_test --workflow 1 --mode gdpr_no_llm --n 1
+```
+
+Output files: art15_wf1_perf_results.csv and matching charts.
+
+### article 15 workflow 2 (DS with no files)
+python3 -m benchmark.art15_perf_test --mode all --n 2
+
+
+~~python3 -m benchmark.art15_perf_test --workflow 2 --mode all --n 5~~
+
+Output files: art15_wf2_perf_results.csv and matching charts.
