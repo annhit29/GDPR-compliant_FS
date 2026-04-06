@@ -232,6 +232,14 @@ Internal users can declare or remove file/folder owners at runtime, through your
 | achao     | An-Chu     | Chao      | acc  |
 
 ---
+Always run
+```
+sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
+```
+to have the up-to-date DB version.
+
+---
+
 # Benchmark: measure the time used for each workflow
 
 1. Baseline: workflow time without GDPR (just the FileSystem), no LLM
@@ -275,5 +283,6 @@ python3 -m benchmark.art15_perf_test --workflow all --mode all --n 2
 
 
 ### article 17
+python3 -m benchmark.art17_perf_test --mode all --n 1
 
 
