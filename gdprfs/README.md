@@ -260,7 +260,9 @@ sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /t
 THEN
 
 ## benchmark command
-### article 5 workflow 2
+### article 5 and article 6 are measured in the same workflow
+because\
+lawful (of article 6) := the system(file system here) **is allowed to process** the DS’s data under the GDPR.
 ```
 # Run all 3 modes, 2 iterations each
 python3 -m benchmark.art5_perf_test --mode all --n 2
