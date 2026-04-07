@@ -267,9 +267,11 @@ python3 -m benchmark.art5_perf_test --mode all --n 2
 ```
 
 ### article 9 workflow 1.5
+article 9 doesn't make sense without LLM, since we use LLM to detect the special data's categories.
 ```
 # Run all 3 modes, 2 iterations each
-python3 -m benchmark.art9_perf_test --mode all --n 2
+python3 -m benchmark.art9_perf_test --mode baseline --n 2
+python3 -m benchmark.art9_perf_test --mode gdpr_with_llm --n 2
 ```
 
 ### article 15 
@@ -286,3 +288,10 @@ python3 -m benchmark.art15_perf_test --workflow all --mode all --n 2
 python3 -m benchmark.art17_perf_test --mode all --n 1
 
 
+### article 30
+article 30 uses article 9, so it doesn't make sense without LLM, since we use LLM to detect the special data's categories.
+
+```
+python3 -m benchmark.art17_perf_test --mode all --n 1
+```
+The `-- mode all` only has `baseline` and `gdpr_with_llm`.
