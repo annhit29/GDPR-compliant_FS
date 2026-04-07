@@ -283,6 +283,13 @@ workflow 2 (DS with no files) -> Output files: art15_wf2_perf_results.csv and ma
 python3 -m benchmark.art15_perf_test --workflow all --mode all --n 2
 ```
 
+### article 16
+run each command step by step, independently:
+```
+python3 -m benchmark.art16_perf_test --mode baseline --n 1
+python3 -m benchmark.art16_perf_test --mode gdpr_no_llm --n 1
+python3 -m benchmark.art16_perf_test --mode gdpr_with_llm --n 1
+```
 
 ### article 17
 python3 -m benchmark.art17_perf_test --mode all --n 1
