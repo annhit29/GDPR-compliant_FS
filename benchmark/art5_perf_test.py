@@ -8,8 +8,8 @@ across 3 modes:
   3. gdpr_with_llm  — GDPR FUSE filesystem + LLM analyzer
 
 Usage (from instrlib/):
-  python -m benchmark.art5_perf_test --mode all --n 5
-  python -m benchmark.art5_perf_test --mode baseline --n 2
+  python -m benchmark.art5&6_perf_test --mode all --n 5
+  python -m benchmark.art5&6_perf_test --mode baseline --n 2
 """
 
 import argparse
@@ -542,7 +542,7 @@ class BenchmarkReporter:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def save_csv(self):
-        csv_path = self.output_dir / "art5_perf_results.csv"
+        csv_path = self.output_dir / "art5&6_perf_results.csv"
         fieldnames = ["mode", "iteration"] + self.STEPS
         with open(csv_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -604,7 +604,7 @@ class BenchmarkReporter:
         ax.set_title("Collect Workflow — Per-Step Latency")
         ax.legend()
         fig.tight_layout()
-        fig.savefig(self.output_dir / "art5_per_step.png", dpi=150)
+        fig.savefig(self.output_dir / "art5&6_per_step.png", dpi=150)
         plt.close(fig)
 
         # ── Total latency bar chart ──
@@ -619,7 +619,7 @@ class BenchmarkReporter:
         ax.set_ylabel("Time (s)")
         ax.set_title("Collect Workflow — Total Latency")
         fig.tight_layout()
-        fig.savefig(self.output_dir / "art5_total.png", dpi=150)
+        fig.savefig(self.output_dir / "art5&6_total.png", dpi=150)
         plt.close(fig)
 
         print(f"  Charts saved to {self.output_dir}/")
