@@ -1,31 +1,37 @@
 """
 Benchmark: Right to Rectification Workflow Performance (Art 16)
 
-Measures wall-clock time of an Art 16 workflow — write incorrect data, read,
-rectify, read rectified — for data subject fhublet (file: fhublet.txt) across
-3 modes:
+Measures wall-clock time of Art 16 workflows for data subject fhublet
+(file: fhublet.txt) across 3 modes:
   1. baseline       — plain filesystem, no GDPR, no LLM
   2. gdpr_no_llm    — GDPR FUSE filesystem, no LLM analyzer
   3. gdpr_with_llm  — GDPR FUSE filesystem + LLM analyzer
 
-Workflow:
+Workflow 1 (wf1): Write incorrect data, read, rectify, then read rectified
   1.  StartSession("achao", "marketing", "direct_marketing")
   2.  Consent("fhublet", "marketing")
   3.  Write incorrect data "hi\\nhi\\n" to fhublet.txt (Write + Collect)
-  4-5. Read fhublet.txt → "hi\\nhi\\n" (Use) + close
-  6.  RequestRectification → file rectified to "Bonjour\\n"
-      (RequestRectification + RequestResponse logged)
-  7.  Read fhublet.txt → "Bonjour\\n" (Use) + close
+  4-5. Read fhublet.txt -> "hi\\nhi\\n" (Use) + close
+  6.  RequestRectification -> file rectified to "Bonjour\\n"
+  7.  Read fhublet.txt -> "Bonjour\\n" (Use) + close
   8.  StopSession("achao")
+
+Workflow 2 (wf2): Incorrect data already present, rectify and read
+  1.  StartSession("achao", "marketing", "direct_marketing")
+  2.  Consent("fhublet", "marketing")
+  3.  RequestRectification -> file rectified to "Bonjour\\n"
+      (IsRectificationRequest + HasInaccuracy asserted by enforcer)
+  4.  Read fhublet.txt -> "Bonjour\\n" (Use) + close
+  5.  StopSession("achao")
 
 Safety: snapshot_state() backs up fhublet.txt, DB rows, and processing_record
 max(id) before first iteration; cleanup_iteration() restores everything after each.
 
 Usage (from instrlib/):
-  python3 -m benchmark.art16_perf_test --mode baseline --n 1
-  python3 -m benchmark.art16_perf_test --mode gdpr_no_llm --n 1
-  python3 -m benchmark.art16_perf_test --mode gdpr_with_llm --n 1
-  """
+  python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1
+  python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_with_llm --n 1
+  python3 -m benchmark.art16_perf_test --workflow all --mode all --n 5
+"""
 
 import argparse
 import base64
@@ -168,7 +174,7 @@ def snapshot_state() -> dict:
         max_pr_id = 0
     conn.close()
 
-    print(f"  [SNAPSHOT] Backed up {TARGET_FILE} → {backup_path}")
+    print(f"  [SNAPSHOT] Backed up {TARGET_FILE} -> {backup_path}")
     print(f"  [SNAPSHOT] file row: id={file_pk}, pfm_rows={len(pfm_rows)}, "
           f"pfsc_rows={len(pfsc_rows)}, max_pr_id={max_pr_id}")
 
@@ -290,8 +296,10 @@ def preflight_checks(mode: str):
 
 # ── Workflow Classes ─────────────────────────────────────────────────────────
 
-class BaselineWorkflow:
-    """Mode 1: plain filesystem write/read/overwrite, no GDPR, no LLM."""
+# ---------- Workflow 1: Write + Read + Rectify + Read ----------
+
+class BaselineWorkflow1:
+    """WF1 Baseline: plain filesystem write/read/overwrite, no GDPR, no LLM."""
 
     def run(self) -> dict:
         tmp_dir = tempfile.mkdtemp(prefix="gdprfs_bench_art16_")
@@ -351,8 +359,8 @@ class BaselineWorkflow:
         }
 
 
-class GDPRWorkflow:
-    """Mode 2/3: GDPR FUSE filesystem, optionally with LLM."""
+class GDPRWorkflow1:
+    """WF1 GDPR: FUSE write + read + rectification + read, optionally with LLM."""
 
     def __init__(self, with_llm: bool):
         self.with_llm = with_llm
@@ -392,12 +400,9 @@ class GDPRWorkflow:
 
         # Step 6: Rectification (upload + request + wait)
         t6 = time.perf_counter()
-        # 6a: Upload edited file to staging
         fid_new = upload_rectification_file(EDITED_FILENAME, RECTIFIED_CONTENT)
-        # 6b: Send RequestRectification event
         fuse_ingest("RequestRectification", uid=DS_UID,
                      fid_old=TARGET_FILE, fid_new=fid_new)
-        # 6c: Wait for background thread to complete
         wait_for_rectification()
         t_rectification = time.perf_counter() - t6
 
@@ -428,22 +433,155 @@ class GDPRWorkflow:
         }
 
 
+# ---------- Workflow 2: Rectify (data already incorrect) + Read ----------
+
+class BaselineWorkflow2:
+    """WF2 Baseline: file already has incorrect data, overwrite + read."""
+
+    def run(self) -> dict:
+        tmp_dir = tempfile.mkdtemp(prefix="gdprfs_bench_art16_wf2_")
+        try:
+            tmp_file = os.path.join(tmp_dir, TARGET_FILE)
+
+            # Setup (untimed): write incorrect data so file exists
+            with open(tmp_file, "wb") as f:
+                f.write(ORIGINAL_CONTENT)
+
+            t0 = time.perf_counter()
+
+            # Step 1: StartSession (no-op)
+            t_start_session = 0.0
+
+            # Step 2: Consent (no-op)
+            t_consent = 0.0
+
+            # Step 3: Rectification (plain file overwrite)
+            t3 = time.perf_counter()
+            with open(tmp_file, "wb") as f:
+                f.write(RECTIFIED_CONTENT)
+            t_rectification = time.perf_counter() - t3
+
+            # Step 4: Read rectified content
+            t4 = time.perf_counter()
+            with open(tmp_file, "rb") as f:
+                content = f.read()
+            t_read = time.perf_counter() - t4
+            assert content == RECTIFIED_CONTENT
+
+            # Step 5: StopSession (no-op)
+            t_stop_session = 0.0
+
+            t_total = time.perf_counter() - t0
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+        return {
+            "t_start_session": t_start_session,
+            "t_consent": t_consent,
+            "t_rectification": t_rectification,
+            "t_read": t_read,
+            "t_stop_session": t_stop_session,
+            "t_total": t_total,
+        }
+
+
+class GDPRWorkflow2:
+    """WF2 GDPR: file already has incorrect data, rectify via FUSE + read."""
+
+    def __init__(self, with_llm: bool):
+        self.with_llm = with_llm
+
+    def run(self) -> dict:
+        fuse_file = FUSE_MOUNT / TARGET_FILE
+
+        t0 = time.perf_counter()
+
+        # Step 1: StartSession
+        t1 = time.perf_counter()
+        fuse_ingest("StartSession", uid=CONTROLLER_UID, purpose="marketing",
+                     reason="direct_marketing")
+        t_start_session = time.perf_counter() - t1
+
+        # Step 2: Consent
+        t2 = time.perf_counter()
+        fuse_ingest("Consent", uid=DS_UID, purpose="marketing")
+        update_consent_db(DS_UID, "marketing", "consented")
+        t_consent = time.perf_counter() - t2
+
+        # Step 3: Rectification (upload + RequestRectification + wait)
+        # Enforcer refines into: IsRectificationRequest + HasInaccuracy
+        # Then causes Rectify(fid_old, fid_new) via rectify_causation_handler
+        t3 = time.perf_counter()
+        fid_new = upload_rectification_file(EDITED_FILENAME, RECTIFIED_CONTENT)
+        fuse_ingest("RequestRectification", uid=DS_UID,
+                     fid_old=TARGET_FILE, fid_new=fid_new)
+        wait_for_rectification()
+        t_rectification = time.perf_counter() - t3
+
+        # Step 4: Read rectified content via FUSE (Use event logged)
+        t4 = time.perf_counter()
+        with open(fuse_file, "rb") as f:
+            content = f.read()
+        t_read = time.perf_counter() - t4
+        assert RECTIFIED_CONTENT.strip() in content.strip(), \
+            f"Expected {RECTIFIED_CONTENT!r} after rectification, got: {content!r}"
+
+        # Step 5: StopSession
+        t5 = time.perf_counter()
+        fuse_ingest("StopSession", uid=CONTROLLER_UID)
+        t_stop_session = time.perf_counter() - t5
+
+        t_total = time.perf_counter() - t0
+
+        return {
+            "t_start_session": t_start_session,
+            "t_consent": t_consent,
+            "t_rectification": t_rectification,
+            "t_read": t_read,
+            "t_stop_session": t_stop_session,
+            "t_total": t_total,
+        }
+
+
 # ── Runner & Reporter ────────────────────────────────────────────────────────
 
+WF_TITLES = {
+    "wf1": "Write + Rectify + Read",
+    "wf2": "Rectify Pre-existing Data + Read",
+}
+
+WF_STEPS = {
+    "wf1": ["t_start_session", "t_consent", "t_write", "t_read_before",
+             "t_rectification", "t_read_after", "t_stop_session", "t_total"],
+    "wf2": ["t_start_session", "t_consent", "t_rectification", "t_read",
+             "t_stop_session", "t_total"],
+}
+
+
 class BenchmarkRunner:
-    def __init__(self, mode: str, n: int):
+    def __init__(self, workflow: str, mode: str, n: int):
+        self.workflow = workflow
         self.mode = mode
         self.n = n
 
     def _make_workflow(self):
-        if self.mode == "baseline":
-            return BaselineWorkflow()
-        elif self.mode == "gdpr_no_llm":
-            return GDPRWorkflow(with_llm=False)
-        elif self.mode == "gdpr_with_llm":
-            return GDPRWorkflow(with_llm=True)
-        else:
-            raise ValueError(f"Unknown mode: {self.mode}")
+        if self.workflow == "wf1":
+            if self.mode == "baseline":
+                return BaselineWorkflow1()
+            elif self.mode == "gdpr_no_llm":
+                return GDPRWorkflow1(with_llm=False)
+            elif self.mode == "gdpr_with_llm":
+                return GDPRWorkflow1(with_llm=True)
+
+        elif self.workflow == "wf2":
+            if self.mode == "baseline":
+                return BaselineWorkflow2()
+            elif self.mode == "gdpr_no_llm":
+                return GDPRWorkflow2(with_llm=False)
+            elif self.mode == "gdpr_with_llm":
+                return GDPRWorkflow2(with_llm=True)
+
+        raise ValueError(f"Unknown workflow/mode: {self.workflow}/{self.mode}")
 
     def run(self) -> list:
         preflight_checks(self.mode)
@@ -456,7 +594,8 @@ class BenchmarkRunner:
         results = []
         try:
             for i in range(self.n):
-                print(f"  [{self.mode}] iteration {i + 1}/{self.n} ... ", end="", flush=True)
+                print(f"  [{self.workflow} | {self.mode}] iteration {i + 1}/{self.n} ... ",
+                      end="", flush=True)
                 if snapshot:
                     cleanup_iteration(snapshot)
                 time.sleep(0.5)  # brief settle time
@@ -464,6 +603,7 @@ class BenchmarkRunner:
                 try:
                     timings = workflow.run()
                     timings["iteration"] = i + 1
+                    timings["workflow"] = self.workflow
                     timings["mode"] = self.mode
                     results.append(timings)
                     print(f"total={timings['t_total']:.4f}s")
@@ -479,17 +619,16 @@ class BenchmarkRunner:
 
 
 class BenchmarkReporter:
-    STEPS = ["t_start_session", "t_consent", "t_write", "t_read_before",
-             "t_rectification", "t_read_after", "t_stop_session", "t_total"]
-
-    def __init__(self, all_results: dict, output_dir: str):
-        self.all_results = all_results
+    def __init__(self, workflow: str, all_results: dict, output_dir: str):
+        self.workflow = workflow
+        self.steps = WF_STEPS[workflow]
+        self.all_results = all_results  # mode -> list of timing dicts
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def save_csv(self):
-        csv_path = self.output_dir / "art16_perf_results.csv"
-        fieldnames = ["mode", "iteration"] + self.STEPS
+        csv_path = self.output_dir / f"art16_{self.workflow}_perf_results.csv"
+        fieldnames = ["mode", "iteration"] + self.steps
         with open(csv_path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
@@ -503,19 +642,19 @@ class BenchmarkReporter:
         col_w = 16
 
         print(f"\n{'=' * 70}")
-        print("  Mean ± Std latency per step (seconds)")
+        print("  Mean +/- Std latency per step (seconds)")
         print(f"{'=' * 70}")
         header = f"  {'Step':<28}" + "".join(f"{m:>{col_w}}" for m in modes)
         print(header)
         print("  " + "-" * (28 + col_w * len(modes)))
 
-        for step in self.STEPS:
+        for step in self.steps:
             row = f"  {step:<28}"
             for mode in modes:
                 vals = [r[step] for r in self.all_results[mode]]
                 mean = statistics.mean(vals)
                 std = statistics.stdev(vals) if len(vals) > 1 else 0.0
-                row += f"{mean:>{col_w - 8}.4f}±{std:<7.4f}"
+                row += f"{mean:>{col_w - 8}.4f}+/-{std:<5.4f}"
             print(row)
         print()
 
@@ -529,7 +668,8 @@ class BenchmarkReporter:
             return
 
         modes = list(self.all_results.keys())
-        steps_no_total = [s for s in self.STEPS if s != "t_total"]
+        steps_no_total = [s for s in self.steps if s != "t_total"]
+        wf_title = WF_TITLES.get(self.workflow, self.workflow)
 
         # ── Per-step grouped bar chart ──
         fig, ax = plt.subplots(figsize=(12, 5))
@@ -547,10 +687,10 @@ class BenchmarkReporter:
         ax.set_xticks(list(x))
         ax.set_xticklabels([s.removeprefix("t_") for s in steps_no_total], rotation=30)
         ax.set_ylabel("Time (s)")
-        ax.set_title("Art 16 Right to Rectification — Per-Step Latency")
+        ax.set_title(f"Art 16 ({wf_title}) — Per-Step Latency")
         ax.legend()
         fig.tight_layout()
-        fig.savefig(self.output_dir / "art16_per_step.png", dpi=150)
+        fig.savefig(self.output_dir / f"art16_{self.workflow}_per_step.png", dpi=150)
         plt.close(fig)
 
         # ── Total latency bar chart ──
@@ -563,9 +703,9 @@ class BenchmarkReporter:
         colors = ["#4c78a8", "#f58518", "#e45756"][:len(modes)]
         ax.bar(modes, totals, yerr=stds, capsize=5, color=colors)
         ax.set_ylabel("Time (s)")
-        ax.set_title("Art 16 Right to Rectification — Total Latency")
+        ax.set_title(f"Art 16 ({wf_title}) — Total Latency")
         fig.tight_layout()
-        fig.savefig(self.output_dir / "art16_total.png", dpi=150)
+        fig.savefig(self.output_dir / f"art16_{self.workflow}_total.png", dpi=150)
         plt.close(fig)
 
         print(f"  Charts saved to {self.output_dir}/")
@@ -576,6 +716,12 @@ class BenchmarkReporter:
 def parse_args():
     p = argparse.ArgumentParser(
         description="Benchmark: Right to Rectification workflow (Art 16)")
+    p.add_argument(
+        "--workflow",
+        choices=["wf1", "wf2", "all"],
+        default="all",
+        help="Which Art. 16 workflow(s) to benchmark (default: all)",
+    )
     p.add_argument(
         "--mode",
         choices=["baseline", "gdpr_no_llm", "gdpr_with_llm", "all"],
@@ -595,34 +741,40 @@ def parse_args():
 def main():
     args = parse_args()
 
+    if args.workflow == "all":
+        workflows = ["wf1", "wf2"]
+    else:
+        workflows = [args.workflow]
+
     if args.mode == "all":
         modes = ["baseline", "gdpr_no_llm", "gdpr_with_llm"]
     else:
         modes = [args.mode]
 
-    all_results = {}
-    for mode in modes:
-        print(f"\n{'=' * 60}")
-        print(f"  Mode: {mode}  |  Iterations: {args.n}")
-        print(f"{'=' * 60}")
-        runner = BenchmarkRunner(mode, args.n)
-        try:
-            results = runner.run()
-        except RuntimeError as e:
-            print(f"  SKIPPED: {e}")
-            continue
-        if results:
-            all_results[mode] = results
-            print(f"  Completed {len(results)}/{args.n} iterations")
+    for wf in workflows:
+        all_results = {}
+        for mode in modes:
+            print(f"\n{'=' * 60}")
+            print(f"  Workflow: {wf}  |  Mode: {mode}  |  Iterations: {args.n}")
+            print(f"{'=' * 60}")
+            runner = BenchmarkRunner(wf, mode, args.n)
+            try:
+                results = runner.run()
+            except RuntimeError as e:
+                print(f"  SKIPPED: {e}")
+                continue
+            if results:
+                all_results[mode] = results
+                print(f"  Completed {len(results)}/{args.n} iterations")
 
-    if all_results:
-        reporter = BenchmarkReporter(all_results, args.output)
-        reporter.save_csv()
-        reporter.print_summary()
-        reporter.save_charts()
-        print("Done.")
-    else:
-        print("\nNo results collected.")
+        if all_results:
+            reporter = BenchmarkReporter(wf, all_results, args.output)
+            reporter.save_csv()
+            reporter.print_summary()
+            reporter.save_charts()
+            print(f"Done ({wf}).")
+        else:
+            print(f"\nNo results collected for {wf}.")
 
 
 if __name__ == "__main__":

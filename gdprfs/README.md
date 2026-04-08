@@ -286,11 +286,21 @@ python3 -m benchmark.art15_perf_test --workflow all --mode all --n 2
 ```
 
 ### article 16
+For each workflow,\
 run each command step by step, independently:
+
+#### Workflow 1: Write incorrect data, read, rectify, then read rectified
 ```
-python3 -m benchmark.art16_perf_test --mode baseline --n 1
-python3 -m benchmark.art16_perf_test --mode gdpr_no_llm --n 1
-python3 -m benchmark.art16_perf_test --mode gdpr_with_llm --n 1
+python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1
+python3 -m benchmark.art16_perf_test --workflow wf1 --mode gdpr_no_llm --n 1
+python3 -m benchmark.art16_perf_test --workflow wf1 --mode gdpr_with_llm --n 1
+```
+
+#### Workflow 2: Incorrect data already present, rectify and read
+```
+python3 -m benchmark.art16_perf_test --workflow wf2 --mode baseline --n 1
+python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_no_llm --n 1
+python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_with_llm --n 1
 ```
 
 ### article 17
