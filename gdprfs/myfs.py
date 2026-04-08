@@ -909,7 +909,7 @@ class MyFS(Fuse):
     """A minimal GDPR-compliant FUSE filesystem."""
 
     def _write(self, path, data, offset, fh=None):
-        print(f"[DEBUG write] called with path={path}, data = {data}, data_len={len(data)}, offset={offset}", flush=True)
+        # print(f"[DEBUG write] called with path={path}, data = {data}, data_len={len(data)}, offset={offset}", flush=True)
         p = _upper(path)
 
         # Ensure the parent folder exists

@@ -214,3 +214,103 @@ then ctrl+O, Enter, ctrl+X
 todo: cont:
 Now, make it dynamic, i.e.
 Internal users can declare or remove file/folder owners at runtime, through your Flask API (internal consent platform), **without restarting the FUSE daemon.**
+
+
+# The Data Subjects
+
+| uid       | first_name | last_name | pwd |
+| --------- | ---------- | --------- | --- |
+| fhublet   | François   | Hublet    | fh  |
+| whsieh    | Wei-En     | Hsieh     | weh |
+| jdoe      | John       | Doe       | jd  |
+| dbasin    | David      | Basin     | db  |
+| zkowalski | Zara       | Kowalski  | zk  |
+
+# The internal user
+| uid       | first_name | last_name | pwd  |
+| --------- | ---------- | --------- | ---- |
+| achao     | An-Chu     | Chao      | acc  |
+
+---
+Always run
+```
+sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
+```
+to have the up-to-date DB version.
+
+---
+
+# Benchmark: measure the time used for each workflow
+
+1. Baseline: workflow time without GDPR (just the FileSystem), no LLM
+2. With GDPR compliance (with GDPR FileSystem), no LLM
+3. With GDPR compliance (with GDPR FileSystem), with LLM
+
+except for article 9 which uses LLM to detect special data and their categories: measurement 2 skipped.
+
+
+```
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
+./setup_fuse_env.sh 
+./reset_myfs_sudo.sh 
+./run_all.sh 
+sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
+
+```
+THEN
+
+## benchmark command
+### article 5 and article 6 are measured in the same workflow
+because\
+lawful (of article 6) := the system(file system here) **is allowed to process** the DS’s data under the GDPR.
+```
+# Run all 3 modes, 2 iterations each
+python3 -m benchmark.art5&6_perf_test --mode all --n 2
+```
+
+### article 9 workflow 1.5
+article 9 doesn't make sense without LLM, since we use LLM to detect the special data's categories.
+```
+# Run all 3 modes, 2 iterations each
+python3 -m benchmark.art9_perf_test --mode baseline --n 2
+python3 -m benchmark.art9_perf_test --mode gdpr_with_llm --n 2
+```
+
+### article 15 
+workflow 1 (DS with files) -> Output files: art15_wf1_perf_results.csv and matching charts.
+
+workflow 2 (DS with no files) -> Output files: art15_wf2_perf_results.csv and matching charts.
+
+```
+python3 -m benchmark.art15_perf_test --workflow all --mode all --n 2
+```
+
+### article 16
+For each workflow,\
+run each command step by step, independently:
+
+#### Workflow 1: Write incorrect data, read, rectify, then read rectified
+```
+python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1
+python3 -m benchmark.art16_perf_test --workflow wf1 --mode gdpr_no_llm --n 1
+python3 -m benchmark.art16_perf_test --workflow wf1 --mode gdpr_with_llm --n 1
+```
+
+#### Workflow 2: Incorrect data already present, rectify and read
+```
+python3 -m benchmark.art16_perf_test --workflow wf2 --mode baseline --n 1
+python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_no_llm --n 1
+python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_with_llm --n 1
+```
+
+### article 17
+python3 -m benchmark.art17_perf_test --mode all --n 1
+
+
+### article 30
+article 30 uses article 9, so it doesn't make sense without LLM, since we use LLM to detect the special data's categories.
+
+```
+python3 -m benchmark.art17_perf_test --mode all --n 1
+```
+The `-- mode all` only has `baseline` and `gdpr_with_llm`.

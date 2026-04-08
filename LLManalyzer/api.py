@@ -8,9 +8,24 @@ import time
 import random
 
 app = Flask(__name__)
+_disabled = False
+
+@app.post("/disable")
+def disable():
+    global _disabled
+    _disabled = True
+    return Response(json.dumps({"status": "disabled"}), mimetype="application/json")
+
+@app.post("/enable")
+def enable():
+    global _disabled
+    _disabled = False
+    return Response(json.dumps({"status": "enabled"}), mimetype="application/json")
 
 @app.post("/analyze-file")
 def analyze_file():
+    if _disabled:
+        return Response(json.dumps([]), mimetype="application/json")
 
     data = request.json
     path = data["path"]
@@ -20,7 +35,20 @@ def analyze_file():
     # 3. internal person to clarify in order to merge the row if potential users could be matched to known users
     # todo: Johnn vs John <- LLM to detect? or fuzzy match: attendre l'utilisateur interne pour décider.
 
+    # print(f"[LLM API] Received path: {path}")
+    # print(f"[LLM API] File exists: {__import__('os').path.exists(path)}")
+    # try:
+    #     with open(path, "rb") as f:
+    #         content = f.read()
+    #     print(f"[LLM API] File size: {len(content)} bytes")
+    #     print(f"[LLM API] First 200 bytes: {content[:200]}")
+    # except Exception as e:
+    #     print(f"[LLM API] Could not read file: {e}")
+
     chunks = split_file(path)
+    # print(f"[LLM API] Number of chunks: {len(chunks)}")
+    # for c in chunks:
+    #     print(f"[LLM API]   chunk {c.index}: text={c.text!r:.100}")
     results = []
 
     def analyze_one(chunk):
@@ -44,6 +72,8 @@ def analyze_file():
     
 
     # Limit pool size to control API rate (recommended: 16 or 32)
+    if not chunks:
+        return Response(json.dumps([], ensure_ascii=False), mimetype="application/json")
     MAX_WORKERS = min(32, len(chunks))
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
