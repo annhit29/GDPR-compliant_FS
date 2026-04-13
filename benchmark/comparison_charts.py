@@ -98,20 +98,30 @@ def chart_overhead_decomposition():
                     bottom=[b + e for b, e in zip(bases, enforcers)],
                     label="LLM (GPT API)", color=colors["llm"])
 
-    # Annotate values
+    # Annotate values inside large bars (LLM)
     for bars in (bars_b, bars_e, bars_l):
-        for bar in bars:
+        for j, bar in enumerate(bars):
             h = bar.get_height()
-            if h > 0.3:
+            if h > 3:
                 ax.text(bar.get_x() + bar.get_width() / 2,
                         bar.get_y() + h / 2,
                         f"{h:.1f}s", ha="center", va="center",
                         fontsize=10, fontweight="bold", color="white")
-            elif h > 0.001:
-                ax.text(bar.get_x() + bar.get_width() / 2,
-                        bar.get_y() + h + 0.5,
-                        f"{h:.2f}s", ha="center", va="bottom",
-                        fontsize=8, color="gray")
+
+    # Annotate thin enforcer bars with staggered heights to avoid overlap
+    enforcer_stagger = {0: 18, 1: 8}  # group index → y-offset for label
+    for j, bar in enumerate(bars_e):
+        h = bar.get_height()
+        total_for_group = bases[j] + enforcers[j] + llms[j]
+        if h > 0.001 and total_for_group > 3:
+            y_target = enforcer_stagger.get(j, 10)
+            ax.annotate(f"Enforcer: {h:.1f}s",
+                        xy=(bar.get_x() + bar.get_width() / 2, bar.get_y() + h),
+                        xytext=(bar.get_x() + bar.get_width() / 2 + 0.15, y_target),
+                        fontsize=9, fontweight="bold", color="#333333",
+                        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="#f58518", alpha=0.9),
+                        arrowprops=dict(arrowstyle="->", color="#f58518", lw=1.2),
+                        ha="left", va="bottom")
 
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=11)
@@ -120,13 +130,24 @@ def chart_overhead_decomposition():
     ax.legend(fontsize=10, loc="upper right", bbox_to_anchor=(1.0, 1.0),
               framealpha=0.9)
 
-    # Add annotation for wf2
+    # Add annotation for wf2: show actual values since bars are too small to see
     wf2_idx = labels.index("Art 16\nwf2") if "Art 16\nwf2" in labels else None
     if wf2_idx is not None:
-        total_wf2 = bases[wf2_idx] + enforcers[wf2_idx] + llms[wf2_idx]
-        ax.annotate("no write step\n-> no LLM call",
-                    xy=(wf2_idx, total_wf2 + 0.3),
-                    ha="center", fontsize=9, fontstyle="italic", color="#555")
+        wf2_b = bases[wf2_idx]
+        wf2_e = enforcers[wf2_idx]
+        wf2_l = llms[wf2_idx]
+        wf2_total = wf2_b + wf2_e + wf2_l
+        ax.annotate(
+            f"No write step in this workflow,\n"
+            f"so LLM is never triggered.\n"
+            f"Total: {wf2_total:.2f}s\n"
+            f"(Base {wf2_b:.4f}s + Enforcer {wf2_e:.2f}s + LLM {wf2_l:.2f}s)",
+            xy=(wf2_idx, wf2_total + 0.3),
+            xytext=(wf2_idx - 0.3, max(llms) * 0.25),
+            ha="center", fontsize=8.5, fontstyle="italic", color="#333",
+            bbox=dict(boxstyle="round,pad=0.4", facecolor="#f0f0f0", edgecolor="#aaa", alpha=0.9),
+            arrowprops=dict(arrowstyle="->", color="#888", lw=1.2),
+        )
 
     fig.tight_layout()
     out = RESULTS_DIR / "overhead_decomposition.png"

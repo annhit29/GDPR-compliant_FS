@@ -203,7 +203,7 @@ sudo python3 gdprfs/setup_db.py
 
 ### How to Run
 ```bash
-cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib # the root of the project
 ./setup_fuse_env.sh
 ./reset_myfs_sudo.sh
 ./run_all.sh
