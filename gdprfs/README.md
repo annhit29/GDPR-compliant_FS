@@ -319,118 +319,33 @@ The FUSE daemon mounts at `/tmp/mnt` and maps all operations to the upper layer.
 
 ### 6.2 PII Detection Hierarchy (4 Tiers)
 
-PII ownership is determined in strict priority order: **stops at first match**:
+PII ownership is determined in strict priority order — **stops at first match**:
 
 | Priority | Tier | Source | Example |
 |----------|------|--------|---------|
-| 1 | **Manual override** (`.gdprowner`) | Internal user declares via internal platform | `jdoe: doe/**` → all files in `doe/` belong to jdoe |
-| 2 | **Folder name** (Lazy DB Folder) | Folder name matches a known Person | Folder `basin/` → matched to David Basin (dbasin) |
-| 3 | **Filename** | Filename contains a Person's name | File `doe_report.txt` → matched to John Doe |
+| 1 | **`.gdprowner`** | Internal user declares ownership rules | `jdoe: jdoe/**` → all files under `jdoe/` belong to jdoe |
+| 2 | **Folder name** | Folder name matches a known Person | Folder `fhublet/` → matched to François Hublet (fhublet) |
+| 3 | **Filename** | Filename contains a Person's name | File `jdoe_report.txt` → matched to John Doe |
 | 4 | **Content** (fallback) | File content scanned for names | Text contains "John Doe" → linked to jdoe |
+
+- `.gdprowner` is located at `/var/lib/gdprfs/.gdprowner`, one rule per line (e.g. `jdoe: jdoe/**`).
+- Folder name activates automatically when a folder name matches a known data subject.
 
 **Key function:** `update_file_mapping_for_upper()` in `db_utils.py`
 
-### 6.3 `.gdprowner` File
-
-Located at `/var/lib/gdprfs/.gdprowner`. Format: one rule per line, `uid: glob_pattern`.
-
-```
-jdoe: doe/**
-aturing: research/*
-```
-
-This means: "Any file matching the glob pattern belongs to the specified data subject." Internal users declare these rules via the internal platform (or manually via `sudo nano`).
-
-### 6.4 Lazy DB Folder
-
-When a folder is created and its name matches a known data subject (case-insensitive substring), all files inside that folder automatically inherit ownership from the folder.
-
-```
-[MKDIR] Creating directory /var/lib/gdprfs/upper/basin
-[lazy DB folder] Folder 'basin' recognized as belonging to David Basin
-[lazy DB folder] Folder-level inheritance activated
-```
-
-This is weaker than `.gdprowner` (automatic name matching vs. explicit declaration).
-
-### 6.5 Consent Model
+### 6.3 Consent Model
 
 **Regular consent (Art 6):** per data subject, per purpose (marketing, service, analytics).
-- Checked via: `GET /api/consents/{uid}/{purpose}` → `"consented"` or `"revoked"`
 
 **Special consent (Art 9):** per data subject, per special data category (health, genetic, religious, racial_ethnic, political, trade_union, biometric, sex_life).
-- Checked via: `GET /api/consents/special/{uid}/{spCat}` → `"special_consented"` or `"special_revoked"`
 
-**Fail-open policy:** if the external consent platform is unreachable, consent is assumed granted (prevents FS lockout on platform downtime).
+### 6.4 Enforcement by Format
 
-### 6.6 Session / Purpose Management
-
-Internal users start a **session** with a declared purpose and reason before accessing files:
-
-```
-POST /ingest {"kind": "StartSession", "uid": "achao", "purpose": "analytics", "reason": "profiling"}
-```
-
-This sets `_current_session_purpose` globally in the FUSE daemon. All subsequent file operations are attributed to this purpose. Default purpose (no active session) is `"marketing"`.
-
-Purposes and their allowed reasons are defined in `purposes_and_reasons.yaml`:
-```yaml
-marketing: [direct_marketing, mass_marketing]
-service: [report]
-analytics: [profiling, dashboard]
-```
-
-### 6.7 File Enforcement by Format
-
-| Format | Granularity | Redaction | Key function |
-|--------|-------------|-----------|-------------|
-| **PDF** | Per page | Entire page replaced by blank "REDACTED" page | `_get_or_build_redacted_pdf()` |
-| **CSV** | Per row | Row cells replaced by `"REDACTED"` | `_get_or_build_enforced_csv()` |
-| **TXT** | Full file | Entire content replaced by `b"REDACTED"` | `read()` Case 2 |
-| **Other** | N/A | Direct read from upper layer (no enforcement) | `read()` fallback |
-
-Enforcement is cached (PDF_CACHE, CSV_CACHE) and invalidated on write/rename/open.
-
-### 6.8 Event Pipeline
-
-Every FUSE operation emits events that flow through the enforcement pipeline:
-
-```
-FUSE op (read/write/rename/delete)
-    ↓
-Generate Events: Use(fid, uid), Write(fid, purpose), Collect(fid, uid), 
-                 SpecialData(fid, category), Delete(fid)
-    ↓
-logger.log([events]) → EnfGuard (MFOTL policy engine)
-    ↓
-Enforcer response:
-  - suppress → return REDACTED / raise EACCES
-  - allow → return actual content
-  - cause → trigger causation handler (Delete, Rectify, Record)
-```
-
-**Events received from external platform (via poller → /ingest):**
-- `Consent(uid, purpose)`, `Revoke(uid, purpose)`
-- `SpecialConsent(uid, purpose, spCat)`, `RevokeSpecialConsent(uid, purpose, spCat)`
-- `RequestAccess(uid)`, `RequestErasure(uid, fid)`, `RequestRectification(uid, fid_old, fid_new)`
-
-### 6.9 Temporary File Handling
-
-Editor temp files (`.goutputstream-*`, `~`, `.swp`, `~$`, `.~lock*`, `.tmp`, `.fuse_hidden`) are:
-- **Skipped** for DB registration, LLM analysis, and GDPR event emission
-- **Tracked** only when renamed to a real file (temp→real save)
-
-This avoids audit spam from editor auto-saves and defers enforcement to the final save.
-
-### 6.10 FUSE Daemon Initialization Sequence
-
-1. Start EnfGuard enforcer + MFOTL policy engine
-2. Sync registered users from external platform (`GET /api/users`)
-3. Replay current consent states into enforcer (`GET /api/consents`)
-4. Start ingest HTTP server on port 7000
-5. Start background consent poller
-6. Rescan all existing files in `/var/lib/gdprfs/upper/` → rebuild DB mappings
-7. Enter FUSE main loop
+| Format | Granularity | Redaction |
+|--------|-------------|-----------|
+| **PDF** | Per page | Entire page replaced by blank "REDACTED" page |
+| **CSV** | Per row | Row cells replaced by `"REDACTED"` |
+| **TXT** | Full file | Entire content replaced by `b"REDACTED"` |
 
 ---
 
