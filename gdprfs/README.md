@@ -393,44 +393,14 @@ Start all services first (see [How to Run](#how-to-run)).
 
 ### Commands
 
-**Article 5 & 6** (lawfulness of processing: measured together):
-```bash
-python3 -m benchmark.art5\&6_perf_test --mode all --n 2
-```
-
-**Article 9** (special categories: only baseline + gdpr_with_llm, LLM required):
-```bash
-python3 -m benchmark.art9_perf_test --mode baseline --n 2
-python3 -m benchmark.art9_perf_test --mode gdpr_with_llm --n 2
-```
-
-**Article 15** (right of access: 2 workflows):
-```bash
-python3 -m benchmark.art15_perf_test --workflow all --mode all --n 2
-```
-
-**Article 16** (right to rectification: 2 workflows, run each mode independently):
-```bash
-# Workflow 1: write incorrect → read → rectify → read rectified
-python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1
-python3 -m benchmark.art16_perf_test --workflow wf1 --mode gdpr_no_llm --n 1
-python3 -m benchmark.art16_perf_test --workflow wf1 --mode gdpr_with_llm --n 1
-
-# Workflow 2: incorrect already present → rectify → read
-python3 -m benchmark.art16_perf_test --workflow wf2 --mode baseline --n 1
-python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_no_llm --n 1
-python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_with_llm --n 1
-```
-
-**Article 17** (right to erasure):
-```bash
-python3 -m benchmark.art17_perf_test --mode all --n 1
-```
-
-**Article 30** (records of processing: only baseline + gdpr_with_llm):
-```bash
-python3 -m benchmark.art30_perf_test --mode all --n 1
-```
+| Article | Modes | Command |
+|---------|-------|---------|
+| **5 & 6** | all 3 | `python3 -m benchmark.art5\&6_perf_test --mode all --n 1` |
+| **9** | baseline + with_llm (requires LLM) | `python3 -m benchmark.art9_perf_test --mode baseline --n 1` then `--mode gdpr_with_llm` |
+| **15** | baseline + no_llm (no LLM needed) | `python3 -m benchmark.art15_perf_test --workflow all --mode all --n 1` |
+| **16** | all 3, per workflow | `python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1` (repeat for each mode and wf2) |
+| **17** | baseline + no_llm (no LLM needed) | `python3 -m benchmark.art17_perf_test --mode all --n 1` |
+| **30** | baseline + with_llm (requires LLM) | `python3 -m benchmark.art30_perf_test --mode all --n 1` |
 
 ### Enforcer vs LLM Overhead Analysis
 
