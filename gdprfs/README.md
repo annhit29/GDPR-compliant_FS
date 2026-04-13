@@ -402,6 +402,8 @@ Start all services first (see [How to Run](#how-to-run)).
 | **17** | baseline + no_llm (no LLM needed) | `python3 -m benchmark.art17_perf_test --mode all --n 1` |
 | **30** | baseline + with_llm (requires LLM) | `python3 -m benchmark.art30_perf_test --mode all --n 1` |
 
+Note: For article 15 and article 17, no LLM is required, because we test each article independently.
+
 ### Enforcer vs LLM Overhead Analysis
 
 The three measurement modes isolate where the performance cost lies:
