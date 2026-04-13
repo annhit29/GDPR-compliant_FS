@@ -160,7 +160,6 @@ rule "r_IsLegitimate"
 
 #art5b rule "purpose_limitation" (l192)
 #l60 so use a Collect event
-#todo: dans instrlib, implemente `Collect`
 rule "r_IsCollection"
     whenever
         Collect(d, ds)
@@ -176,7 +175,7 @@ assume true IsCompatibleWithPurpose
 assume false IsArchival
   """No archiving purposes in the public interest (eg: long‑term preservation for public‑interest, historical or scientific research) is performed."""
 
-#art5c #todo: pour ces trois predicates: future work: discuter cmt on peut détecter avec LLM
+#art5c 
 assume true IsAdequate
   """Data d processed or collected is enough in quantity and quality to fulfil purpose p, but not more than that."""
 
@@ -197,7 +196,6 @@ assume true IsUpToDate
 assume false UndueDataDelay
     """We do not wait to delete data."""
 
-#todo: can I do this? `Rectify(fid, fid)`. Finalement qd je refine rule "rectification_obligation" (art16), il veut que Write soit causable, mais ici: suppressable. Donc pour resoudre le pb: mets Rectify to assume true && Write event reste suppressable: ça compile.
 #Whenever a file fid is written (i.e. updated),
 #the olf data in `fid` is rectified to the new data in `fid`.
 
@@ -303,9 +301,6 @@ rule "r_IsSpecialData"
     SpecialData(d, spCat)
   refine
     IsSpecialData(d, spCat)
-
-#assume false IsSpecialData #todo: what about medical certificate? this is health data, but sensitive enough?
-#    """This FileSystem does not process sensitive personal data (eg: political opinions, religious beliefs, sexual orientation, etc.)."""
 
 #para2a
 rule "r_GiveSpecialConsent"
@@ -427,13 +422,6 @@ assume false HasCategory
 # create Category event, then refine IsCategory event
 
 assume false HasIntendedRecipient
-    """todo: no recipient??, sinon cf en bas"""
-#rule "r_HasIntendedRecipient"
-#  whenever
-#    Collect(d, ds)
-#    NOT StopSession(inUid) SINCE StartSession(inUid, p, reason)
-#  refine
-#    HasIntendedRecipient(d, "GDPRFS")
 
 # a declaration := a formal statement included in the controller’s response to a request.
 assume true IsRecipient
@@ -647,7 +635,7 @@ rule "r_HasSecurityMeasuresDeclaration"
     whenever
         true
     refine
-        HasSecurityMeasuresDeclaration(a, "TODO: Complete list of security measures")
+        HasSecurityMeasuresDeclaration(a, "Access control, consent-aware enforcement, purpose limitation")
 
 rule "r_IsSME"
     whenever

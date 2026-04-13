@@ -22,7 +22,6 @@ class File(Base):
     sha256 = Column(String(64), nullable=True) # for LLM
     special_categories = Column(Text, default="") # comma-separated GDPR Art 9 special data categories (e.g. "health,religious")
 
-    #todo: last or all, à voir
     last_action = Column(String) # "read", "write", "rename", etc.
 
     people = relationship("Person", secondary=person_file_map, back_populates="files")

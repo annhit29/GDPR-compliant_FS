@@ -30,25 +30,8 @@ def analyze_file():
     data = request.json
     path = data["path"]
     known_users = data.get("known_users", []) # <- wanna scale up, so
-    #todo: 1. demande a LLM de trouver la liste des personnes qui peuvent etre la DS
-    # 2. match avec les utilisateurs externes connus (DB)
-    # 3. internal person to clarify in order to merge the row if potential users could be matched to known users
-    # todo: Johnn vs John <- LLM to detect? or fuzzy match: attendre l'utilisateur interne pour décider.
-
-    # print(f"[LLM API] Received path: {path}")
-    # print(f"[LLM API] File exists: {__import__('os').path.exists(path)}")
-    # try:
-    #     with open(path, "rb") as f:
-    #         content = f.read()
-    #     print(f"[LLM API] File size: {len(content)} bytes")
-    #     print(f"[LLM API] First 200 bytes: {content[:200]}")
-    # except Exception as e:
-    #     print(f"[LLM API] Could not read file: {e}")
 
     chunks = split_file(path)
-    # print(f"[LLM API] Number of chunks: {len(chunks)}")
-    # for c in chunks:
-    #     print(f"[LLM API]   chunk {c.index}: text={c.text!r:.100}")
     results = []
 
     def analyze_one(chunk):
@@ -87,24 +70,6 @@ def analyze_file():
         json.dumps(results, indent=2, ensure_ascii=False),
         mimetype="application/json"
     )
-
-    # for chunk in chunks: # todo: parallelize this loop with threading.processor.pool
-    #     result = agent.run_sync(json.dumps({
-    #         "text": chunk.text,
-    #         "known_users": known_users
-    #     }))
-    #     results.append({
-    #         "chunk index": chunk.index,
-    #         "chunk metadata": chunk.metadata,
-    #         "analysis": result.output.model_dump(mode="json") 
-    #     })
-
-    # # response in JSON
-    # return Response(
-    #     json.dumps(results, indent=2, ensure_ascii=False),
-    #     mimetype="application/json"
-    # )
-
 
 if __name__ == "__main__":
     app.run(port=5005)

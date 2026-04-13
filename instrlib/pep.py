@@ -37,7 +37,6 @@ class PEP:
 
     def __init__(
         self, 
-        # todo: 1. do mapping from function to action(s) 2. then do instrumentation_mapping with the read action using FUSE
         mapping                 : Dict[Tuple[str, str], Callable[..., list[Event]]] = {},  # map from function to action(s)
         suppression_handlers    : Dict[Union[str, Tuple[str, ...]], Any]            = {}, 
         causation_handlers      : Dict[Union[str, Tuple[str, ...]], Any]            = {},

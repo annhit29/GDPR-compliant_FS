@@ -12,7 +12,7 @@ with open(CONFIG_PATH, "r") as f:
     EVENT_CONFIG = yaml.safe_load(f)["events"]
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24) # a SECRET_KEY to securely sign the session cookies # todo: this can be improved by using a fixed secret key from env variable or config file, by storing it in a .env or config file
+app.secret_key = os.urandom(24) # a SECRET_KEY to securely sign the session cookies 
 
 app.config["SESSION_COOKIE_NAME"] = "external_session"
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///external_consent_platform.db"

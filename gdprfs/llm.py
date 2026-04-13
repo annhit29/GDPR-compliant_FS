@@ -97,7 +97,7 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
         # Build a lookup: last name → registered user
         registered_people = {
             (p.first_name.lower(), p.last_name.lower()): p
-            for p in s.query(Person).filter_by(registered=True) #todo: or not? coz eg: "Hsieeh" won't create merge alert when whsieh hasn't registered yet
+            for p in s.query(Person).filter_by(registered=True) 
         }
         
         # 4. Create merge alerts for partial matches or potential typos
@@ -116,14 +116,6 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                     continue
 
                 tokens = detected_norm.split()
-
-                # todo: do this?
-                # # When the detected name has only 1 token, treat it as last name, not first name
-                # # This matches human intuition:
-                # # A single surname like "Hsieh" or "Hsieeh" → likely a last name
-                # # A single given name like "John" or "Johnn" → likely a first name
-                # # Since you cannot know, you must pick one convention, and last-name is the correct one
-                # # (because LLM is better at detecting surnames from partial input).
 
                 # check if last name matches a registered user
                 for (first, last), reg_person in registered_people.items(): # iterate over registered users with the first and last names gotten
