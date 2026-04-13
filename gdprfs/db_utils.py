@@ -34,11 +34,6 @@ def load_gdprowner():
 GDPROWNER_RULES = load_gdprowner()# global cache. This is loaded only once at startup of the FUSE daemon.
 print(f"[INIT] Loaded gdprowner rules: {GDPROWNER_RULES}") # [INIT] Loaded gdprowner rules: [('jdoe', 'doe/**')]
 
-# def reload_gdprignore():
-#     """Update the global variable in-place, so every function using GDPRIGNORE_PATTERNS automatically sees the updated patterns."""
-#     global GDPRIGNORE_PATTERNS
-#     GDPRIGNORE_PATTERNS = load_gdprignore()
-
 def _is_temp_name(fuse_path: str) -> bool:
     """Detect temporary filenames created by editors (e.g., gedit)."""
     name = os.path.basename(fuse_path)

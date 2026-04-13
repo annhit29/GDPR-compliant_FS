@@ -217,28 +217,28 @@ sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /t
 
 ### Step-by-Step (4 Terminals)
 
-**Terminal 1 — External Consent Platform (port 5000):**
+**Terminal 1: External Consent Platform (port 5000):**
 ```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform
 source ~/awscli-venv/bin/activate
-python app.py
+python3 app.py
 ```
 
-**Terminal 2 — Internal Purpose Platform (port 8000):**
+**Terminal 2: Internal Purpose Platform (port 8000):**
 ```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/internal_purpose_platform
 source ~/awscli-venv/bin/activate
-python app.py
+python3 app.py
 ```
 
-**Terminal 3 — LLM Analyzer (port 5005):**
+**Terminal 3: LLM Analyzer (port 5005):**
 ```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/LLManalyzer
 source ~/awscli-venv/bin/activate
-python api.py
+python3 api.py
 ```
 
-**Terminal 4 — FUSE Daemon:**
+**Terminal 4: FUSE Daemon:**
 ```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
 source ~/awscli-venv/bin/activate
@@ -251,7 +251,7 @@ sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /t
 - **External/Internal platforms & LLM Analyzer:** `Ctrl+C` in their terminals
 - **FUSE daemon:** run `./reset_myfs_sudo.sh` from the instrlib directory
 
-### How to Reset Databases
+### How to Reset Databases (if needed)
 ```bash
 # Reset GDPRFS DB
 sudo rm gdprfs.db && sudo python3 gdprfs/setup_db.py
@@ -319,7 +319,7 @@ The FUSE daemon mounts at `/tmp/mnt` and maps all operations to the upper layer.
 
 ### 6.2 PII Detection Hierarchy (4 Tiers)
 
-PII ownership is determined in strict priority order — **stops at first match**:
+PII ownership is determined in strict priority order: **stops at first match**:
 
 | Priority | Tier | Source | Example |
 |----------|------|--------|---------|
@@ -477,23 +477,23 @@ Start all services first (see [How to Run](#4-how-to-run)).
 
 ### Commands
 
-**Article 5 & 6** (lawfulness of processing — measured together):
+**Article 5 & 6** (lawfulness of processing: measured together):
 ```bash
 python3 -m benchmark.art5\&6_perf_test --mode all --n 2
 ```
 
-**Article 9** (special categories — only baseline + gdpr_with_llm, LLM required):
+**Article 9** (special categories: only baseline + gdpr_with_llm, LLM required):
 ```bash
 python3 -m benchmark.art9_perf_test --mode baseline --n 2
 python3 -m benchmark.art9_perf_test --mode gdpr_with_llm --n 2
 ```
 
-**Article 15** (right of access — 2 workflows):
+**Article 15** (right of access: 2 workflows):
 ```bash
 python3 -m benchmark.art15_perf_test --workflow all --mode all --n 2
 ```
 
-**Article 16** (right to rectification — 2 workflows, run each mode independently):
+**Article 16** (right to rectification: 2 workflows, run each mode independently):
 ```bash
 # Workflow 1: write incorrect → read → rectify → read rectified
 python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1
@@ -511,7 +511,7 @@ python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_with_llm --n 1
 python3 -m benchmark.art17_perf_test --mode all --n 1
 ```
 
-**Article 30** (records of processing — only baseline + gdpr_with_llm):
+**Article 30** (records of processing: only baseline + gdpr_with_llm):
 ```bash
 python3 -m benchmark.art30_perf_test --mode all --n 1
 ```
@@ -526,7 +526,7 @@ The three measurement modes isolate where the performance cost lies:
 | `gdpr_no_llm` | Yes | No | Enforcer-only overhead |
 | `gdpr_with_llm` | Yes | Yes | Full system with LLM content analysis |
 
-Comparing across modes shows that the **MFOTL enforcer (EnfGuard) adds negligible overhead** — the **LLM (GPT API) dominates execution time**:
+Comparing across modes shows that the **MFOTL enforcer (EnfGuard) adds negligible overhead**: the **LLM (GPT API) dominates execution time**:
 
 | Benchmark | baseline | gdpr_no_llm | gdpr_with_llm | Enforcer overhead | LLM overhead |
 |-----------|----------|-------------|---------------|-------------------|--------------|
@@ -541,8 +541,8 @@ python3 -m benchmark.enforcer_vs_llm_charts
 ```
 
 Output in `benchmark/results/`:
-- `enforcer_vs_llm_overhead.png` — per-article stacked bar (Base FS + Enforcer + LLM)
-- `enforcer_vs_llm_breakdown.png` — averaged overhead breakdown across benchmarks
+- `enforcer_vs_llm_overhead.png`: per-article stacked bar (Base FS + Enforcer + LLM)
+- `enforcer_vs_llm_breakdown.png`: averaged overhead breakdown across benchmarks
 
 ### Output
 Results are saved in `benchmark/results/` as CSV files and PNG charts.
@@ -566,7 +566,7 @@ Once any tier matches (e.g., folder name matches a DS), further tiers are **not 
 - Caches (PDF, CSV) invalidated only on write/rename/open
 
 ### Consent Pre-Checks vs. Event Logging
-Consent is checked **before** events are logged to the enforcer. If consent is revoked, the operation is blocked immediately and no audit event is emitted. Event logging only happens if the pre-check passes — the enforcer then decides whether to allow or suppress based on the full MFOTL policy.
+Consent is checked **before** events are logged to the enforcer. If consent is revoked, the operation is blocked immediately and no audit event is emitted. Event logging only happens if the pre-check passes: the enforcer then decides whether to allow or suppress based on the full MFOTL policy.
 
 ### SpecialData Event Deduplication
 The set `_special_data_logged` tracks `(file_id, category)` pairs per open cycle. Multiple reads of the same file in a single session don't re-emit SpecialData events. The set is cleared in `open()` for each new access.
