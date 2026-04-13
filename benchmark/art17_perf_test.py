@@ -1,25 +1,12 @@
 """
 Benchmark: Right to Erasure Workflow Performance (Art 17)
 
-Measures wall-clock time of the Art 17(1)(b) erasure-after-consent-withdrawal
-workflow for data subject jdoe (file: jdoe.txt) across 3 modes:
-  1. baseline       — plain filesystem, no GDPR, no LLM
-  2. gdpr_no_llm    — GDPR FUSE filesystem, no LLM analyzer
-  3. gdpr_with_llm  — GDPR FUSE filesystem + LLM analyzer
-
 Workflow:
   1. StartSession("fhublet", "marketing", "direct_marketing")
   2. Consent("jdoe","marketing") + 4x SpecialConsent (health, racial_ethnic, genetic, biometric)
   3. Revoke + 4x RevokeSpecialConsent + RequestErasure("jdoe","jdoe.txt")
      => enforcer causes Delete("jdoe.txt")
   4. StopSession("fhublet")
-
-Safety: snapshot_state() backs up jdoe.txt and DB rows before first iteration;
-cleanup_iteration() restores everything after each iteration.
-
-Usage (from instrlib/):
-  python -m benchmark.art17_perf_test --mode all --n 5
-  python -m benchmark.art17_perf_test --mode baseline --n 2
 """
 
 import argparse

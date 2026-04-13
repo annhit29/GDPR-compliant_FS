@@ -127,8 +127,7 @@ instrlib/
 │   ├── api.py                           # Flask API (:5005): POST /analyze-file, POST /enable, /disable
 │   ├── agent.py                         # Pydantic-AI agent (with GPT): PII detection, Art 9 categories
 │   ├── models.py                        # Pydantic models: PersonHit, ChunkAnalysis, SpecialDataCategory
-│   ├── splitter.py                      # Multi-format file splitting: txt, csv, excel, docx, odt, pdf
-│   └── test_agent.py, test_splitter.py  # Tests
+│   └── splitter.py                      # Multi-format file splitting: txt, csv, excel, docx, odt, pdf
 │
 ├── instrlib/                            # Generic runtime enforcement library
 │   ├── instrument.py                    # Operation interception (decorators)
@@ -153,7 +152,6 @@ instrlib/
 ├── setup_fuse_env.sh                    # Install system deps, Python packages, create /var/lib/gdprfs
 ├── run_all.sh                           # Launch all 4 components in parallel terminals
 ├── reset_myfs_sudo.sh                   # Kill FUSE daemon, unmount /tmp/mnt, recreate mount point
-├── reset_myfs_user_mode.sh              # User-mode version of reset
 ├── .env                                 # OpenAI API key for LLM Analyzer
 └── gdprfs.db                            # Main GDPRFS SQLite database
 ```
@@ -167,14 +165,9 @@ instrlib/
 - Python 3.x
 - `poppler-utils` (provides `pdftotext` for PDF processing)
 
-### Python Virtual Environment
-```bash
-# The project uses a venv at ~/gdprfs-venv (for FUSE daemon) or ~/awscli-venv (for platforms)
-source ~/awscli-venv/bin/activate
-```
-
 ### First-Time Setup
 ```bash
+# Change directory to the root of the project
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
 
 # Install all system deps + Python packages + create /var/lib/gdprfs structure
@@ -223,38 +216,6 @@ sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /t
 ### How to Stop
 - **External/Internal platforms & LLM Analyzer:** `Ctrl+C` in their terminals
 - **FUSE daemon:** run `./reset_myfs_sudo.sh` from the instrlib directory
-
-### The 4 Terminals that pop up are:
-
-**Terminal 1: External Consent Platform (port 5000):**
-```bash
-cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform
-source ~/awscli-venv/bin/activate
-python3 app.py
-```
-
-**Terminal 2: Internal Purpose Platform (port 8000):**
-```bash
-cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/internal_purpose_platform
-source ~/awscli-venv/bin/activate
-python3 app.py
-```
-
-**Terminal 3: LLM Analyzer (port 5005):**
-```bash
-cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/LLManalyzer
-source ~/awscli-venv/bin/activate
-python3 api.py
-```
-
-**Terminal 4: FUSE Daemon:**
-```bash
-cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
-source ~/awscli-venv/bin/activate
-./setup_fuse_env.sh
-./reset_myfs_sudo.sh
-sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
-```
 
 ### How to Reset Databases (if needed)
 ```bash

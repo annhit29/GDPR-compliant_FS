@@ -1,16 +1,5 @@
 """
 Benchmark: Right of Access Workflow Performance (Art 15)
-
-Measures wall-clock time of the Art 15 access-request workflow
-for a data subject (zkowalski) who has consent but NO files in the system,
-across 3 modes:
-  1. baseline       — plain filesystem, no GDPR, no LLM
-  2. gdpr_no_llm    — GDPR FUSE filesystem, no LLM analyzer
-  3. gdpr_with_llm  — GDPR FUSE filesystem + LLM analyzer
-
-Usage (from instrlib/):
-  python -m benchmark.art15_perf_test --mode all --n 5
-  python -m benchmark.art15_perf_test --mode baseline --n 2
 """
 
 import argparse

@@ -54,7 +54,7 @@ def list_current_states():
 @bp.route("/users")
 def get_users():
     """
-    This method is for ynchronization:
+    This method is for synchronization:
     Return list of all users.
     """
     from models import User

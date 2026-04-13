@@ -154,7 +154,7 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
 
         # 5. Extract GDPR Art 9 special data categories from all chunks
         # chunk["analysis"] comes from ChunkAnalysis.model_dump() in LLManalyzer/api.py
-        # which now includes "special_data_categories" field (default [])
+        # which includes "special_data_categories" field (default [])
         all_special_cats = set()
         for chunk in llm_results:
             cats = chunk["analysis"].get("special_data_categories", [])

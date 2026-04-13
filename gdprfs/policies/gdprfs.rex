@@ -85,8 +85,8 @@ refine type interest     is string
 refine type special_data_category is string
 
 #4. define refinement rules
-#The refinement can only use the variables I use in `whenever` part.
-# refine := remplacer un événement abstrait de la loi (eg: DataProcessing event) par un événement concret du système (Use event).
+#The refinement can only use the variables used in `whenever` part.
+# refine := replace an abstract event of the GDPR law (eg: DataProcessing event) by a concrete event of the system (Use event).
 
 #for art5a's obligations
 rule "r_PersonalData_Use"
@@ -100,9 +100,6 @@ rule "r_PersonalData_Collect"
     Collect(d, ds)
   refine
     PersonalData(d, ds)
-
-#assume true PersonalData
-#  """data is personal data whenever it is used (art5a)"""
 
 assume true IsFair
   """data is processed fairly whenever it is used by an activity/event (art5a)"""
@@ -159,7 +156,7 @@ rule "r_IsLegitimate"
         IsLegitimate(p)
 
 #art5b rule "purpose_limitation" (l192)
-#l60 so use a Collect event
+#l60 so we use a Collect event
 rule "r_IsCollection"
     whenever
         Collect(d, ds)
@@ -187,8 +184,8 @@ assume true IsLimitedToWhatIsNecessary
 
 #art5d rule "accurate_and_up_to_date"
 
-#Write event but not Use event, because "Data must be accurate and, where necessary, kept up to date." i.e. "If data is inaccurate, Then I must **correct** it."
-#it's an limitation: no Writes yet when I first Read the files
+#Write event but not Use event, because "Data must be accurate and, where necessary, kept up to date." i.e. "If data is inaccurate, Then we must correct it."
+#it's an limitation: no Writes yet when we first Read the files
 assume true IsAccurate
 assume true IsUpToDate
 
@@ -197,11 +194,11 @@ assume false UndueDataDelay
     """We do not wait to delete data."""
 
 #Whenever a file fid is written (i.e. updated),
-#the olf data in `fid` is rectified to the new data in `fid`.
+#the old data in `fid` is rectified to the new data in `fid`.
 
-#so Every write operation counts as correcting the data.
+#so every write operation counts as correcting the data.
 
-#unrefine Rectify
+### unrefine Rectify ###
 
 #art5e rule "temporal_storage_limitation"
 
@@ -282,7 +279,7 @@ rule "r_IsOverriddenByDataSubjectInterests"
         IsOverriddenByDataSubjectInterests("GDPRFS", "ds's interests", ds)
 
 #art6.2
-#already done previously.
+#already refined previously.
 
 #art9
 #para1
@@ -389,13 +386,7 @@ rule "r_IsAccessRequest"
     Request(ds, "access", "GDPRFS")
     IsAccessRequest("access")
 
-note "### unrefined ###"
-#assume true RequestResponse
-#    """Controller GDPRFS responds to data subject's access request with a response that contains the requested information."""
-
-#assume true Contains
-#    """The response to data subject's access request contains the requested information."""
-
+note "### unrefine RequestResponse and Contains ###"
 assume true IsDataProcessingOngoing
     """IsDataProcessingOngoing is a causable event"""
 
@@ -453,7 +444,7 @@ assume true IsReceptionSource
     """Irrelevant since we never receive data from other sources."""
 
 assume true IsDSSource
-    """The dsta subject source is declared in the response to data subject's access request, if applicable."""
+    """The data subject source is declared in the response to data subject's access request, if applicable."""
 
 #art15.h
 rule "r_HasIntendedAutomatedDecision"
@@ -588,7 +579,7 @@ assume false IsNecessaryForFreedomOfExpression
 
 #art21
 assume false DemonstrateOverridingCompellingGrounds
-    """We never claim compelling groups that override the interests, rights, and freedoms of the data subject."""
+    """We never claim compelling grounds that override the interests, rights, and freedoms of the data subject."""
 
 rule "r_IsDirectMarketing"
     whenever
@@ -600,7 +591,7 @@ assume false Object
     """No data subject objects to the processing of their data for direct marketing purposes by default."""
 
 #art30
-###unrefine Record###
+### unrefine Record ###
 
 assume false IsJointController
     """There are no joint controllers."""

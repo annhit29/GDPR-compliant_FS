@@ -1,9 +1,8 @@
-from asyncio import events
 import requests, time, os
 
 BASE_URL = "http://127.0.0.1:5000"
 TRACE = "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs/gdprfstrace.log"
-INTERVAL = 6#600  # seconds
+INTERVAL = 6 # seconds
 
 def poll_once():
     events = requests.get(f"{BASE_URL}/api/events", params={"status": "pending"}).json()
@@ -11,7 +10,7 @@ def poll_once():
         print("[Poller] No pending events.")
         return 0
     
-    os.makedirs(os.path.dirname(TRACE), exist_ok=True) # extracts the directory path part /home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs and makes sure it exists
+    os.makedirs(os.path.dirname(TRACE), exist_ok=True) # extracts the directory path (= TRACE) and ensures the trace log exists.
     with open(TRACE, "a", encoding="utf-8") as f: # opens the file gdprfstrace.log in append mode, or creates it first automatically if it doesn’t exist yet
         for e in events:
             payload = {"kind": e["kind"]}

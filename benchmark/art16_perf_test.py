@@ -1,12 +1,6 @@
 """
 Benchmark: Right to Rectification Workflow Performance (Art 16)
 
-Measures wall-clock time of Art 16 workflows for data subject fhublet
-(file: fhublet.txt) across 3 modes:
-  1. baseline       — plain filesystem, no GDPR, no LLM
-  2. gdpr_no_llm    — GDPR FUSE filesystem, no LLM analyzer
-  3. gdpr_with_llm  — GDPR FUSE filesystem + LLM analyzer
-
 Workflow 1 (wf1): Write incorrect data, read, rectify, then read rectified
   1.  StartSession("achao", "marketing", "direct_marketing")
   2.  Consent("fhublet", "marketing")
@@ -26,11 +20,6 @@ Workflow 2 (wf2): Incorrect data already present, rectify and read
 
 Safety: snapshot_state() backs up fhublet.txt, DB rows, and processing_record
 max(id) before first iteration; cleanup_iteration() restores everything after each.
-
-Usage (from instrlib/):
-  python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1
-  python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_with_llm --n 1
-  python3 -m benchmark.art16_perf_test --workflow all --mode all --n 5
 """
 
 import argparse

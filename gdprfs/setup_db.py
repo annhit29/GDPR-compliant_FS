@@ -1,9 +1,7 @@
-from datetime import datetime
-from pathlib import Path
-from models import Base, ENGINE, Session, File, Person, NameAlias, PersonFileSpecialCategory
+from models import Base, ENGINE, Session, Person
 
 # --- Setup the database ---
-Base.metadata.create_all(ENGINE) #create empty tables of gdprfs/models.py
+Base.metadata.create_all(ENGINE) # Create all tables defined in gdprfs/models.py
 print("[DB] gdprfs.db's tables (empty) initialized successfully.")
 
 session = Session() # open a session to create initial data

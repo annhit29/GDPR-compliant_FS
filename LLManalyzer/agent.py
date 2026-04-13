@@ -6,7 +6,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
 from pydantic_ai import Agent
 from models import ChunkAnalysis
 from dotenv import load_dotenv
-import os
 from pathlib import Path
 
 # ------------------------------------------------------
@@ -20,7 +19,7 @@ assert os.getenv("OPENAI_API_KEY"), "OPENAI_API_KEY not found in .env"
 
 
 # ------------------------------------------------------
-# Pydantic-AI Agent (old version = no schema enforcement)
+# Pydantic-AI Agent
 # ------------------------------------------------------
 
 agent = Agent[ChunkAnalysis](
@@ -45,8 +44,9 @@ text = parsed_json["text"]
 known_users = parsed_json["known_users"]
 
 ----------------------------------------------
-CONFIDENCE SCORING RULES (for not have inventing confidence scores)
-----------------------------------------------update_file_people_from_llm
+CONFIDENCE SCORING RULES (to avoid inventing confidence scores)
+----------------------------------------------
+update_file_people_from_llm
 
 ### Name confidence:
 - 0.95 - 1.00 → exact match of known user's full_name (case-insensitive)

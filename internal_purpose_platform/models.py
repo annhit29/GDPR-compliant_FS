@@ -15,7 +15,6 @@ class CurrentSession(db.Model):
     purpose = db.Column(db.String, nullable=False)
     reason = db.Column(db.String, nullable=False)
     started_at = db.Column(db.DateTime, default=datetime.utcnow)
-    # ended_at = db.Column(db.DateTime, default=datetime.utcnow)
     active = db.Column(db.Boolean, default=True) # 0 = inactive, 1 = active
 
     def as_dict(self):

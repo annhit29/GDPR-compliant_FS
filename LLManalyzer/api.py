@@ -1,11 +1,10 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from flask import Flask, request, Response #jsonify
+from flask import Flask, request, Response
 from splitter import split_file
 from agent import agent
 import json
 import threading
 import time
-import random
 
 app = Flask(__name__)
 _disabled = False

@@ -1,11 +1,6 @@
 """
 Benchmark: Records of Processing Activities Workflow Performance (Art 30)
 
-Measures wall-clock time of an Art 30 workflow — read, write, rename, revoke,
-suppressed read — for data subject jdoe (file: jdoe_health.txt) across 2 modes:
-  1. baseline       — plain filesystem, no GDPR, no LLM
-  2. gdpr_with_llm  — GDPR FUSE filesystem + LLM analyzer
-
 Workflow:
   1.  StartSession("achao", "marketing", "direct_marketing")
   2.  Consent("jdoe","marketing") + SpecialConsent("jdoe","marketing","health")
@@ -16,13 +11,6 @@ Workflow:
   8.  RevokeSpecialConsent("jdoe","marketing","health")
   9-10. Read after revoke → REDACTED + close
   11. StopSession("achao")
-
-Safety: snapshot_state() backs up jdoe_health.txt, DB rows, and processing_record
-max(id) before first iteration; cleanup_iteration() restores everything after each.
-
-Usage (from instrlib/):
-  python -m benchmark.art30_perf_test --mode all --n 5
-  python -m benchmark.art30_perf_test --mode baseline --n 2
 """
 
 import argparse

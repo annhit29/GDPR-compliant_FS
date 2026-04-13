@@ -29,15 +29,12 @@ def merge_person_into(s, dup_person, registered_person):
     # Move file mappings
     for f in dup_person.files:
         if registered_person not in f.people:
-            print("not in", f.file_id, "adding", registered_person.id)
             f.people.append(registered_person)
         if dup_person in f.people:
-            print("in", f.file_id, "removing", dup_person.id)
             f.people.remove(dup_person)
 
     # Delete duplicate
     s.delete(dup_person)
-    print("DELETION temporary user DONE:", dup_person.first_name, dup_person.last_name)
 
 # --- Load reasons.yaml ---
 REASONS_PATH = os.path.join(os.path.dirname(__file__), "purposes_and_reasons.yaml")
@@ -74,7 +71,6 @@ def merge_alerts():
 
 @app.post("/resolve_merge")
 def resolve_merge():
-    print("FORM SUBMITTED:", request.form)
 
     alias = request.form["alias"].strip().lower()
     person_id = int(request.form["person_id"])
@@ -116,7 +112,7 @@ def resolve_merge():
                 print(f"Merging duplicate person_id {dup.id} into registered person_id {registered_person.id}")
                 merge_person_into(s, dup, registered_person)
                 s.commit()
-            #else: no duplicate found → nothing to merge
+            #else: no duplicate found, so nothing to merge
             
     # Remove this alert from the merge_alerts.json file
     data = load_merge_alerts()
@@ -200,7 +196,6 @@ def index():
         return redirect(url_for("login"))
     user = InternalUser.query.filter_by(uid=session["uid"]).first()
     current = CurrentSession.query.filter_by(uid=user.uid, active=True).first()
-    # return render_template("index.html", user=user, purposes=PURPOSES, current=current)
     alerts = load_merge_alerts()
     return render_template(
         "index.html",
@@ -274,5 +269,4 @@ def stop_session():
     return redirect(url_for("index"))
 
 if __name__ == "__main__":
-    # app.run("127.0.0.1", 8000, debug=True)
     app.run("127.0.0.1", 8000, debug=True, use_reloader=False)

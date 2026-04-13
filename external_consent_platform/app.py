@@ -6,6 +6,7 @@ from werkzeug.serving import run_simple
 import requests
 import yaml, os
 from flask import flash
+from flask import Response
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "event_config.yaml")
 with open(CONFIG_PATH, "r") as f:
@@ -75,12 +76,11 @@ def logout():
 def index():
     if "uid" not in session: # if user is not logged in
         return redirect(url_for("login")) # then redirect to the login page
-    # else:
+
     # Fetch current logged-in user info
     uid = session["uid"]
     user = User.query.filter_by(uid=uid).first()
 
-    # events = Event.query.order_by(Event.created_at.desc()).limit(25).all()
     events = (
         Event.query
         .filter_by(uid=uid) # only show events of the logged-in user
@@ -88,14 +88,12 @@ def index():
         .limit(25)
         .all()
     )
-    # states = CurrentEventState.query.order_by(CurrentEventState.updated_at.desc()).all()
     states = (
         CurrentEventState.query
         .filter_by(uid=uid)
         .order_by(CurrentEventState.updated_at.desc())
         .all()
     )
-    # return render_template("index.html", events=events, states=states)
     return render_template("index.html", events=events, states=states, event_config=EVENT_CONFIG, user=user)
 
 @app.route("/submit", methods=["POST"])
@@ -107,7 +105,6 @@ def submit():
         flash("You must log in first.")
         return redirect(url_for("login"))
     uid = session["uid"] # get uid from session, in order to prevent DS from triggering events for another DS
-    # uid = request.form["uid"].strip()
     purpose = request.form.get("purpose", "").strip().lower()
     action = request.form["action"]
 
@@ -120,7 +117,6 @@ def submit():
     if not evt_def:
         flash(f"Unknown event type: {action}")
         return redirect(url_for("index"))
-        # return jsonify({"error": f"Unknown event type: {action}"}), 400
     
     # Extract spCat for SpecialConsent / RevokeSpecialConsent (Art 9)
     spCat = request.form.get("spCat", "").strip().lower() if action in ("SpecialConsent", "RevokeSpecialConsent") else None
@@ -235,7 +231,6 @@ def download_my_data():
         if status.get("ready"):
             resp = requests.get(
                 f"http://127.0.0.1:7000/access_download/{status['response_id']}", timeout=30)
-            from flask import Response
             return Response(
                 resp.content,
                 mimetype="application/zip",

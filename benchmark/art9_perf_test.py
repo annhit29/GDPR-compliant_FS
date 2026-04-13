@@ -1,15 +1,5 @@
 """
 Benchmark: Special Data Consent Workflow Performance (Art 9)
-
-Measures wall-clock time of the Art 9 workflow (TXT files, multiple DSs,
-SpecialConsent / RevokeSpecialConsent) across 3 modes:
-  1. baseline       — plain filesystem, no GDPR, no LLM
-  2. gdpr_no_llm    — GDPR FUSE filesystem, no LLM analyzer
-  3. gdpr_with_llm  — GDPR FUSE filesystem + LLM analyzer
-
-Usage (from instrlib/):
-  python -m benchmark.art9_perf_test --mode all --n 5
-  python -m benchmark.art9_perf_test --mode gdpr_with_llm --n 1
 """
 
 import argparse
