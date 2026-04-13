@@ -1,316 +1,581 @@
-# GDPR-compliant file system
+# GDPR-Compliant File System (GDPRFS)
+
+A FUSE-based file system that enforces GDPR compliance at the filesystem level. Every file operation (read, write, rename, delete) is intercepted and checked against consent policies, PII ownership rules, and GDPR article requirements, all in real time.
+
+**GDPR articles implemented:** 5 (Accuracy), 6 (Lawful Basis), 9 (Special Categories), 15 (Right of Access), 16 (Right to Rectification), 17 (Right to Erasure), 30 (Records of Processing Activities).
+
+**Three measurement modes:** baseline (plain FS, no GDPR), `gdpr_no_llm` (GDPR without LLM), `gdpr_with_llm` (GDPR with LLM content analysis).
+
+---
+
+## Table of Contents
+
+1. [Architecture](#1-architecture)
+2. [Project Structure](#2-project-structure)
+3. [Setup & Prerequisites](#3-setup--prerequisites)
+4. [How to Run](#4-how-to-run)
+5. [Database Schema](#5-database-schema)
+6. [Core Concepts](#6-core-concepts)
+7. [GDPR Article Implementation Map](#7-gdpr-article-implementation-map)
+8. [Data Subjects & Internal Users](#8-data-subjects--internal-users)
+9. [Benchmarks](#9-benchmarks)
+10. [System Design Decisions](#10-system-design-decisions)
+
+---
+
+## 1. Architecture
+
+### Components
+
+![Architecture diagram](./archiDiag.jpg)
+
+| Component | Port | Role |
+|-----------|------|------|
+| **FUSE Daemon** (`gdprfs/myfs.py`) | 7000 (ingest) | Core filesystem + GDPR enforcement. Intercepts all file ops, checks consent, emits events to EnfGuard enforcer. |
+| **External Consent Platform** (`external_consent_platform/`) | 5000 | Web portal for Data Subjects (DS). Manages consent, Art 15/16/17 requests. |
+| **Internal Purpose Platform** (`internal_purpose_platform/`) | 8000 | Web portal for internal users. Manages sessions (purpose/reason), merge alerts, `.gdprowner` declarations. |
+| **LLM Analyzer** (`LLManalyzer/`) | 5005 | GPT API (gpt-5-nano) wrapper. Scans file contents for PII and Art 9 special data categories. |
+
+
+### Communication Flow
 
 ```
-INSTRLIB/
-├── gdprfs/
-│   ├── myfs.py                 ← has the poller inside 
-│   ├── db_utils.py
-│   ├── models.py               ← GDPR FS' DB models
-│   ├── setup_db.py             ← set up the GDPR FS' DB  
-│   └── ...
-└── gdprfs.db
+Data Subject (browser)                    Internal User (browser)
+        |                                          |
+        v                                          v
+External Consent Platform (:5000)    Internal Purpose Platform (:8000)
+        |                                          |
+        |  Poller (every 6s)                       |  Direct HTTP POST
+        |  GET /api/events?status=pending          |
+        v                                          v
+        +----------> FUSE Ingest Server (:7000) <--+
+                            |
+                     logger.log([Event])
+                            |
+                     EnfGuard (MFOTL policy engine)
+                            |
+                     suppress / allow / cause
+                            |
+                     FUSE operation result
+                     (content or REDACTED)
+```
+
+### Communication Matrix
+| From | To | Port | Endpoint | Implemented in (= where the server route is defined) | Purpose |
+|------|----|------|----------|----------------|---------|
+| Poller | External Platform | 5000 | `GET /api/events?status=pending` | `external_consent_platform/api.py` | Fetch all pending consent events |
+| Poller | External Platform | 5000 | `PATCH /api/events/{id}/ack` | `external_consent_platform/api.py` | Acknowledge processed event |
+| Poller | FUSE Daemon | 7000 | `POST /ingest` | `gdprfs/myfs.py` | Forward consent and request events |
+| Internal Platform | FUSE Daemon | 7000 | `POST /ingest` | `gdprfs/myfs.py` | StartSession and StopSession |
+| External Platform | FUSE Daemon | 7000 | `POST /sync_users` | `gdprfs/myfs.py` | Notify new DS registration |
+| External Platform | FUSE Daemon | 7000 | `POST /upload_rectification` | `gdprfs/myfs.py` | Art 16 file staging |
+| External Platform | FUSE Daemon | 7000 | `GET /access_status/{uid}` | `gdprfs/myfs.py` | Art 15 status check |
+| External Platform | FUSE Daemon | 7000 | `GET /access_download/{id}` | `gdprfs/myfs.py` | Art 15 ZIP download |
+| FUSE Daemon | External Platform | 5000 | `GET /api/consents/{uid}/{purpose}` | `external_consent_platform/api.py` | Check regular consent (Art 6) |
+| FUSE Daemon | External Platform | 5000 | `GET /api/consents/special/{uid}/{spCat}` | `external_consent_platform/api.py` | Check special data categories consent (Art 9) |
+| FUSE Daemon | External Platform | 5000 | `GET /api/users` | `external_consent_platform/api.py` | Sync registered users |
+| FUSE Daemon | LLM Analyzer | 5005 | `POST /analyze-file` | `LLManalyzer/api.py` | PII + Art 9 content analysis |
+
+---
+
+## 2. Project Structure
+
+```
+instrlib/
+├── gdprfs/                              # FUSE file system daemon
+│   ├── myfs.py                          # Main FUSE daemon: all FS ops, consent checks,
+│   │                                    #   PDF/CSV/TXT enforcement, ingest HTTP server, causation handlers
+│   ├── models.py                        # SQLAlchemy ORM: File, Person, PersonFileSpecialCategory,
+│   │                                    #   ProcessingRecord, NameAlias, person_file_map
+│   ├── db_utils.py                      # PII detection (4-tier), .gdprowner parsing, user sync,
+│   │                                    #   text extraction (PDF/CSV/TXT)
+│   ├── llm.py                           # LLM API integration, merge alert generation, Art 9 categories
+│   ├── settings.py                      # Paths: EnfGuard binary, MFOTL formula, signature, trace log
+│   ├── setup_db.py                      # Initialize gdprfs.db (create all tables)
+│   ├── merge_alerts.py                  # Persist merge alerts JSON for internal platform UI
+│   ├── policies/                        # MFOTL enforcement policies
+│   │   ├── gdprfs.mfotl                 # Main GDPR policy formula
+│   │   ├── gdprfs.sig                   # Event signature file
+│   │   ├── gdprfs.rex and gdprfs.lex    # for enforcement
+│   │   └── session.mfotl, consent.mfotl, delete.mfotl  # Sub-policies
+│   └── README.md                        # This file
 │
-└── external_consent_platform/  ← external Data Subject (DS, = external users) Flask portal
-│   ├── app.py                  ← Flask app (main entrypoint) for DS
-│   ├── api.py                  ← REST API routes for this FS
-│   ├── models.py               ← external consent platform's DB models
-│   ├── poller.py               ← FS-side poller
-│   ├── event_config.yaml       ← modularize the external consent platform and GDPR-compliant FS related part
-│   └── templates/
-│   │   ├── index.html          ← DS's webpage (HTML UI)
-│   │   ├── signup.html
-│   │   └── login.html
-│   └── instance/
-│       └── external_purpose_platform.db
+├── external_consent_platform/           # Data Subject (DS) web portal
+│   ├── app.py                           # Flask app: signup, login, consent and revoke forms,
+│   │                                    #   Art 15 download, Art 16 upload, Art 17 withdraw all consents then erase
+│   ├── api.py                           # REST API: /api/events, /api/consents/{uid}/{purpose},
+│   │                                    #   /api/consents/special/{uid}/{spCat}, /api/users
+│   ├── models.py                        # User, Event, CurrentEventState
+│   ├── poller.py                        # Background daemon: polls pending events → POST to FUSE /ingest
+│   ├── event_config.yaml                # Event type definitions + state_change mappings
+│   ├── templates/                       # index.html (DS portal), my_data.html (Art 15), signup, login
+│   └── instance/external_consent_platform.db
 │
-└── internal_purpose_platform/
-    ├── app.py v
-    ├── models.py v
-    ├── reasons.yaml v
-    ├── templates/ v
-    │   ├── index.html v
-    │   ├── signup.html v
-    │   └── login.html v
-    └── instance/
-        └── internal_purpose_platform.db
+├── internal_purpose_platform/           # Internal user web portal
+│   ├── app.py                           # Flask app: session (start and stop), merge alert resolution,
+│   │                                    #   POST StartSession and StopSession to FUSE /ingest
+│   ├── models.py                        # InternalUser, CurrentSession
+│   ├── purposes_and_reasons.yaml        # Purpose hierarchy (marketing/service/analytics → reasons)
+│   ├── templates/                       # index.html (session mgmt + merge alerts), signup, login
+│   └── instance/internal_purpose_platform.db
+│
+├── LLManalyzer/                         # LLM-based file content analyzer
+│   ├── api.py                           # Flask API (:5005): POST /analyze-file, POST /enable, /disable
+│   ├── agent.py                         # Pydantic-AI agent (with GPT): PII detection, Art 9 categories
+│   ├── models.py                        # Pydantic models: PersonHit, ChunkAnalysis, SpecialDataCategory
+│   ├── splitter.py                      # Multi-format file splitting: txt, csv, excel, docx, odt, pdf
+│   └── test_agent.py, test_splitter.py  # Tests
+│
+├── instrlib/                            # Generic runtime enforcement library
+│   ├── instrument.py                    # Operation interception (decorators)
+│   ├── enforcer.py                      # EnfGuard process wrapper
+│   ├── pdp.py                           # Policy Decision Point (queries MFOTL)
+│   ├── pep.py                           # Policy Enforcement Point (applies decisions)
+│   ├── event.py                         # Event model for policy evaluation
+│   ├── logger.py                        # Event logging and audit trail
+│   ├── handler_graph.py                 # Handler execution graph
+│   ├── schema.py                        # Event schema definition
+│   └── django/                          # Django integration modules
+│
+├── benchmark/                           # Time measurement benchmarks per GDPR article
+│   ├── art5&6_perf_test.py              # Art 5+6: lawfulness of processing
+│   ├── art9_perf_test.py                # Art 9: special categories (baseline + gdpr_with_llm only)
+│   ├── art15_perf_test.py               # Art 15: right of access (2 workflows)
+│   ├── art16_perf_test.py               # Art 16: right to rectification (2 workflows)
+│   ├── art17_perf_test.py               # Art 17: right to erasure
+│   ├── art30_perf_test.py               # Art 30: records of processing (baseline + gdpr_with_llm only)
+│   └── results/                         # CSV data + PNG charts
+│
+├── setup_fuse_env.sh                    # Install system deps, Python packages, create /var/lib/gdprfs
+├── run_all.sh                           # Launch all 4 components in parallel terminals
+├── reset_myfs_sudo.sh                   # Kill FUSE daemon, unmount /tmp/mnt, recreate mount point
+├── reset_myfs_user_mode.sh              # User-mode version of reset
+├── .env                                 # OpenAI API key for LLM Analyzer
+└── gdprfs.db                            # Main GDPRFS SQLite database
 ```
 
-Please refresh the page `http://127.0.0.1:5000/` to see the update.
+---
 
+## 3. Setup & Prerequisites
 
-Commands to run:
-terminal3:
-```
-cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform
+### System Dependencies
+- Linux with FUSE support (`/dev/fuse`)
+- Python 3.x
+- `poppler-utils` (provides `pdftotext` for PDF processing)
+
+### Python Virtual Environment
+```bash
+# The project uses a venv at ~/gdprfs-venv (for FUSE daemon) or ~/awscli-venv (for platforms)
 source ~/awscli-venv/bin/activate
 ```
 
-If I want to remove `external_consent_platform`'s existing db in order to create a new one automatically on the startup of app.py 
-```
-sudo rm instance/external_consent_platform.db 
-```
-
-Otherwise, I can directly:
-```
-python app.py
-```
-Ctrl+C to stop running app.py
-
-
-then terminal2:
-```
+### First-Time Setup
+```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
-sudo rm gdprfs.db # remove GDPR FS' database 
-sudo python3 gdprfs/setup_db.py # initialize GDPR FS database's all tables
-```
 
-then terminal1:
-```
-cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
-. ~/awscli-venv/bin/activate
+# Install all system deps + Python packages + create /var/lib/gdprfs structure
 ./setup_fuse_env.sh
-./reset_myfs_sudo.sh
-
-# Run my FUSE filesystem with the FUSE daemon
-sudo PYTHONPATH=. python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
 ```
 
-then terminal2:
-to stop the FUSE daemon:
+This script:
+- Installs `poppler-utils`, configures `/dev/fuse` permissions
+- Creates symlinks for `fuse.py` and `fuseparts`
+- Installs Python packages: SQLAlchemy, Flask, Requests, Pydantic, Pydantic-AI, OpenAI, python-docx, odfpy, pandas, openpyxl, pdfminer.six
+- Generates `/var/lib/gdprfs/redacted_template.pdf`
+- Creates `/var/lib/gdprfs/.gdprowner` (root-only)
+
+### LLM Analyzer Setup
+Set the API key in `.env`:
 ```
+OPENAI_API_KEY=sk-...
+```
+
+### Initialize GDPRFS Database
+```bash
+sudo python3 gdprfs/setup_db.py
+```
+To reset (delete and recreate):
+```bash
+sudo rm gdprfs.db
+sudo python3 gdprfs/setup_db.py
+```
+
+---
+
+## 4. How to Run
+
+### Quick Start (Recommended)
+```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
-./reset_myfs_sudo.sh
+./setup_fuse_env.sh
+./run_all.sh
+```
+Then in a separate terminal:
+```bash
+sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
 ```
 
+### Step-by-Step (4 Terminals)
 
-TL;DR: t
-step1: in terminal3:
-```
+**Terminal 1 — External Consent Platform (port 5000):**
+```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform
 source ~/awscli-venv/bin/activate
 python app.py
 ```
 
-step2: in terminal4:
-```
+**Terminal 2 — Internal Purpose Platform (port 8000):**
+```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/internal_purpose_platform
 source ~/awscli-venv/bin/activate
 python app.py
 ```
 
-step3: in terminal1:
+**Terminal 3 — LLM Analyzer (port 5005):**
+```bash
+cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib/LLManalyzer
+source ~/awscli-venv/bin/activate
+python api.py
 ```
+
+**Terminal 4 — FUSE Daemon:**
+```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
-. ~/awscli-venv/bin/activate
+source ~/awscli-venv/bin/activate
+./setup_fuse_env.sh
 ./reset_myfs_sudo.sh
+sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
 ```
 
-i.e.
+### How to Stop
+- **External/Internal platforms & LLM Analyzer:** `Ctrl+C` in their terminals
+- **FUSE daemon:** run `./reset_myfs_sudo.sh` from the instrlib directory
 
-1. Run in terminal1:
+### How to Reset Databases
+```bash
+# Reset GDPRFS DB
+sudo rm gdprfs.db && sudo python3 gdprfs/setup_db.py
+
+# Reset External Consent Platform DB
+sudo rm external_consent_platform/instance/external_consent_platform.db
+# (recreated automatically on next app.py startup)
+
+# Reset Internal Purpose Platform DB
+sudo rm internal_purpose_platform/instance/internal_purpose_platform.db
+# (recreated automatically on next app.py startup)
 ```
-./setup_fuse_env.sh;
-./run_all.sh
-```
-2. Run in terminal2: `sudo PYTHONPATH=. python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other`
 
-Whenever we want to stop the external consent platform and the internal purpose platform, do Ctrl+C on both terminals.
-Whenever we want to stop the FUSE daemon, do in terminal1: `./reset_myfs_sudo.sh`
+### Ports Summary
 
+| Service | Port |
+|---------|------|
+| External Consent Platform | 5000 |
+| Internal Purpose Platform | 8000 |
+| LLM Analyzer | 5005 |
+| FUSE Ingest Server | 7000 |
 
-# Ports:
-External: 5000
-Internal: 8000
-LLM analyzer: 5005 (why not, because it is not used)
+---
 
+## 5. Database Schema
 
-# LLM Analyzer
-For this, one needs an API key for the LLM model.
+### GDPRFS Database (`gdprfs.db`)
 
+| Table | Columns | Purpose |
+|-------|---------|---------|
+| `file` | id, file_id (unique), abs_path, created_at, modified_at, accessed_at, sha256, special_categories, last_action | File metadata + Art 9 categories |
+| `person` | id, uid (unique, nullable), first_name, last_name, registered (bool) | Data subjects. `registered=True` = signed up on external platform. `uid=NULL` = detected by LLM but unregistered. |
+| `person_file_map` | person_id, file_id | Many-to-many: which persons are linked to which files |
+| `person_file_special_category` | id, person_id, file_id, special_category | Per-person-per-file Art 9 categories (e.g., Alice has "health" data in report.pdf) |
+| `processing_record` | id, processor, controller, activity, property, value, timestamp | Art 30 records of processing activities (audit trail) |
+| `alias_person_map` | id, alias (unique), person_id | Human-confirmed name aliases (e.g., "Hsieeh" → "Hsieh") |
 
-# System Design (Assumption/Choices)
-Dec 3 2025
-## PII manual explicit declaration then detection in Folder name, then filename, only then file content!
-See `def update_file_mapping_for_upper`
-1. If gdprowner matches, then we should NOT run folder-name logic.
-We use Strong **Inheritance** for PII detection:
-2. `[Lazy DB Folder]`: Folder name determines the owner, so all files inside a folder belong to that external person. 
-3. Else, If the filename contains a name, then the file clearly belongs to that external person.
-4. Else, if folder or filename have not already identified the external person, then file content is scanned. 
+### External Consent Platform DB (`external_consent_platform.db`)
 
-## `.gdprowner` file
-internal users use the internal platform interface to declare the PII manually. These declarations will be stored in the `.gdprowner` file (a `.gitignore`-like file).
-| Feature           |  |
-| ----------------- | --------------------------------- |
-| Purpose           | manually declare PII ownership    |
-| Effect            | file becomes PERSONAL data        |
-| Enforcer behavior | controlled by consent             |
-| Mapping           | MUST map file → person            |
-| Analogy           | `.gdprowner`                      |
+| Table | Columns | Purpose |
+|-------|---------|---------|
+| `users` | id, uid, first_name, last_name, password_hash | Registered data subjects |
+| `events` | event_id, kind, uid, purpose, spCat, fid, fid_new, status, created_at | Event log (Consent, Revoke, RequestAccess, etc.). `status`: pending → acked |
+| `current_event_state` | current_state_id, uid, purpose, category, spCat, status, updated_at | Current consent state per DS per purpose |
 
-Eg: An intenal user manually declares `.gdprowner` to contain
+### Internal Purpose Platform DB (`internal_purpose_platform.db`)
+
+| Table | Columns | Purpose |
+|-------|---------|---------|
+| `internal_users` | id, uid, first_name, last_name, password_hash | Internal system users |
+| `current_sessions` | current_state_id, uid, purpose, reason, started_at, active | Active processing session per internal user |
+
+---
+
+## 6. Core Concepts
+
+### 6.1 Two-Layer File Architecture
+
+| Layer | Path | Access | Purpose |
+|-------|------|--------|---------|
+| **Upper** | `/var/lib/gdprfs/upper/` | User-writable | Working copy. All FUSE ops happen here. |
+| **Mirror** | `/var/lib/gdprfs/mirror/` | Root-only, immutable | Trusted audit copy. Synced on every write/rename. |
+
+The FUSE daemon mounts at `/tmp/mnt` and maps all operations to the upper layer. The mirror layer is maintained automatically as a tamper-proof backup.
+
+### 6.2 PII Detection Hierarchy (4 Tiers)
+
+PII ownership is determined in strict priority order — **stops at first match**:
+
+| Priority | Tier | Source | Example |
+|----------|------|--------|---------|
+| 1 | **Manual override** (`.gdprowner`) | Internal user declares via internal platform | `jdoe: doe/**` → all files in `doe/` belong to jdoe |
+| 2 | **Folder name** (Lazy DB Folder) | Folder name matches a known Person | Folder `basin/` → matched to David Basin (dbasin) |
+| 3 | **Filename** | Filename contains a Person's name | File `doe_report.txt` → matched to John Doe |
+| 4 | **Content** (fallback) | File content scanned for names | Text contains "John Doe" → linked to jdoe |
+
+**Key function:** `update_file_mapping_for_upper()` in `db_utils.py`
+
+### 6.3 `.gdprowner` File
+
+Located at `/var/lib/gdprfs/.gdprowner`. Format: one rule per line, `uid: glob_pattern`.
+
 ```
 jdoe: doe/**
-```
-with the folder structure
-```
-upper/
- └── doe/
-      ├── dd.txt
-      └── d.txt
+aturing: research/*
 ```
 
-This means
-> “Any file inside the folder `doe/` (and all its subfolders) is owned by user `jdoe` because the internal user manually declared it so.”
+This means: "Any file matching the glob pattern belongs to the specified data subject." Internal users declare these rules via the internal platform (or manually via `sudo nano`).
 
-Thus, the system says "No need to scan filename or content. We override automatically: these files belong to `jdoe`."
+### 6.4 Lazy DB Folder
 
-Csq:
-“EVERY file in folder `doe/` belongs to `jdoe` because an intenral user explicitly said so.”
+When a folder is created and its name matches a known data subject (case-insensitive substring), all files inside that folder automatically inherit ownership from the folder.
 
-## Lazy DB Folder
-`[Lazy DB Folder]` is only triggered when folder looks like a person, based on name matching logic.
-> “The folder name looks like it belongs to John Doe, so all files inherit ownership from the folder.”
-
-This is weaker than `.gdprowner` where internal user declares manually and explicitely through the internal platform interface.
-
-Eg:
-1. If an internal user creates a folder `basin/`
 ```
 [MKDIR] Creating directory /var/lib/gdprfs/upper/basin
 [lazy DB folder] Folder 'basin' recognized as belonging to David Basin
-[lazy DB folder] Folder-level inheritance activated (context=mkdir)
+[lazy DB folder] Folder-level inheritance activated
 ```
-then the system uses the name matching logic to determine if this folder belongs to DS `dbasin`.
-In this case, Yes. So all everything inside `basin/` will be mapped to personid `dbasin` in the `person_file_map` table.
 
-2. Indeed
-2.1. Inside this folder, we create a file,
+This is weaker than `.gdprowner` (automatic name matching vs. explicit declaration).
+
+### 6.5 Consent Model
+
+**Regular consent (Art 6):** per data subject, per purpose (marketing, service, analytics).
+- Checked via: `GET /api/consents/{uid}/{purpose}` → `"consented"` or `"revoked"`
+
+**Special consent (Art 9):** per data subject, per special data category (health, genetic, religious, racial_ethnic, political, trade_union, biometric, sex_life).
+- Checked via: `GET /api/consents/special/{uid}/{spCat}` → `"special_consented"` or `"special_revoked"`
+
+**Fail-open policy:** if the external consent platform is unreachable, consent is assumed granted (prevents FS lockout on platform downtime).
+
+### 6.6 Session / Purpose Management
+
+Internal users start a **session** with a declared purpose and reason before accessing files:
+
 ```
-[CREATE] Synced /var/lib/gdprfs/upper/basin/Empty Document → mirror
-[lazy DB folder] Linked (folder) David Basin ↔ Empty Document
-[lazy DB folder] Finished mapping for folder `basin` (dbasin ↔ Empty Document, context=create), folder-based only
-[DB] Updated metadata for Empty Document (last_action=create)
+POST /ingest {"kind": "StartSession", "uid": "achao", "purpose": "analytics", "reason": "profiling"}
 ```
-And we see it is immidiately mapped to user `dbasin`. This mapping is stored in the `person_file_map` table.
 
-2.2. After renaming the filename,
+This sets `_current_session_purpose` globally in the FUSE daemon. All subsequent file operations are attributed to this purpose. Default purpose (no active session) is `"marketing"`.
+
+Purposes and their allowed reasons are defined in `purposes_and_reasons.yaml`:
+```yaml
+marketing: [direct_marketing, mass_marketing]
+service: [report]
+analytics: [profiling, dashboard]
 ```
-[DB] Detected rename Empty Document → b.txt
-[lazy DB folder] Finished mapping for folder `basin` (dbasin ↔ b.txt, context=rename), folder-based only
-[DB] Updated metadata for b.txt (last_action=rename)
-[DB] Mapped after rename → /basin/b.txt
+
+### 6.7 File Enforcement by Format
+
+| Format | Granularity | Redaction | Key function |
+|--------|-------------|-----------|-------------|
+| **PDF** | Per page | Entire page replaced by blank "REDACTED" page | `_get_or_build_redacted_pdf()` |
+| **CSV** | Per row | Row cells replaced by `"REDACTED"` | `_get_or_build_enforced_csv()` |
+| **TXT** | Full file | Entire content replaced by `b"REDACTED"` | `read()` Case 2 |
+| **Other** | N/A | Direct read from upper layer (no enforcement) | `read()` fallback |
+
+Enforcement is cached (PDF_CACHE, CSV_CACHE) and invalidated on write/rename/open.
+
+### 6.8 Event Pipeline
+
+Every FUSE operation emits events that flow through the enforcement pipeline:
+
 ```
-We see the `dbasin ↔ b.txt` mapping. And this is stored in the `person_file_map` table.
-
-
-Note: for static testing, i .e. assuming internal user interacts via the internal platform to declare manually, but in the reality, use `sudo nano /var/lib/gdprfs/.gdprowner` to declare ownership of a folder or a file of a DS, eg:
-An intenal user manually declares `.gdprowner` to contain
+FUSE op (read/write/rename/delete)
+    ↓
+Generate Events: Use(fid, uid), Write(fid, purpose), Collect(fid, uid), 
+                 SpecialData(fid, category), Delete(fid)
+    ↓
+logger.log([events]) → EnfGuard (MFOTL policy engine)
+    ↓
+Enforcer response:
+  - suppress → return REDACTED / raise EACCES
+  - allow → return actual content
+  - cause → trigger causation handler (Delete, Rectify, Record)
 ```
-jdoe: doe/**
-```
-then ctrl+O, Enter, ctrl+X
 
-todo: cont:
-Now, make it dynamic, i.e.
-Internal users can declare or remove file/folder owners at runtime, through your Flask API (internal consent platform), **without restarting the FUSE daemon.**
+**Events received from external platform (via poller → /ingest):**
+- `Consent(uid, purpose)`, `Revoke(uid, purpose)`
+- `SpecialConsent(uid, purpose, spCat)`, `RevokeSpecialConsent(uid, purpose, spCat)`
+- `RequestAccess(uid)`, `RequestErasure(uid, fid)`, `RequestRectification(uid, fid_old, fid_new)`
 
+### 6.9 Temporary File Handling
 
-# The Data Subjects
+Editor temp files (`.goutputstream-*`, `~`, `.swp`, `~$`, `.~lock*`, `.tmp`, `.fuse_hidden`) are:
+- **Skipped** for DB registration, LLM analysis, and GDPR event emission
+- **Tracked** only when renamed to a real file (temp→real save)
 
-| uid       | first_name | last_name | pwd |
-| --------- | ---------- | --------- | --- |
-| fhublet   | François   | Hublet    | fh  |
-| whsieh    | Wei-En     | Hsieh     | weh |
-| jdoe      | John       | Doe       | jd  |
-| dbasin    | David      | Basin     | db  |
-| zkowalski | Zara       | Kowalski  | zk  |
+This avoids audit spam from editor auto-saves and defers enforcement to the final save.
 
-# The internal user
-| uid       | first_name | last_name | pwd  |
-| --------- | ---------- | --------- | ---- |
-| achao     | An-Chu     | Chao      | acc  |
+### 6.10 FUSE Daemon Initialization Sequence
+
+1. Start EnfGuard enforcer + MFOTL policy engine
+2. Sync registered users from external platform (`GET /api/users`)
+3. Replay current consent states into enforcer (`GET /api/consents`)
+4. Start ingest HTTP server on port 7000
+5. Start background consent poller
+6. Rescan all existing files in `/var/lib/gdprfs/upper/` → rebuild DB mappings
+7. Enter FUSE main loop
 
 ---
-Always run
-```
-sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
-```
-to have the up-to-date DB version.
+
+## 7. GDPR Article Implementation Map
+
+| Article | Right / Requirement | Implementation | Key files |
+|---------|---------------------|----------------|-----------|
+| **Art 5** | Data accuracy | Rectification causation handler replaces inaccurate data | `myfs.py:rectify_causation_handler()` |
+| **Art 6** | Lawful basis (consent) | Pre-check consent before every read/write; suppress if revoked | `myfs.py:_check_consent()`, `read()`, `_write()` |
+| **Art 9** | Special categories | Per-person-per-file special category tracking; separate consent checks | `models.py:PersonFileSpecialCategory`, `myfs.py:_check_special_consent()` |
+| **Art 15** | Right of access | DS requests access → FUSE packages all their files + manifest into ZIP | `myfs.py:RequestAccess` handler, `/access_download` |
+| **Art 16** | Right to rectification | DS uploads corrected file → FUSE replaces original, re-runs LLM analysis | `myfs.py:rectify_causation_handler()`, `/upload_rectification` |
+| **Art 17** | Right to erasure | DS withdraws all consent + requests erasure → FUSE deletes file from upper + mirror + DB | `myfs.py:delete_causation_handler()`, `external_consent_platform/app.py:withdraw_and_erase()` |
+| **Art 30** | Records of processing | Every enforcement action logged to `ProcessingRecord` table with timestamp | `myfs.py:record_causation_handler()`, `models.py:ProcessingRecord` |
 
 ---
 
-# Benchmark: measure the time used for each workflow
+## 8. Data Subjects & Internal Users
 
-1. Baseline: workflow time without GDPR (just the FileSystem), no LLM
-2. With GDPR compliance (with GDPR FileSystem), no LLM
-3. With GDPR compliance (with GDPR FileSystem), with LLM
+### Data Subjects (External Consent Platform)
 
-except for article 9 which uses LLM to detect special data and their categories: measurement 2 skipped.
+| uid | first_name | last_name | pwd |
+|-----|------------|-----------|-----|
+| fhublet | François | Hublet | fh |
+| whsieh | Wei-En | Hsieh | weh |
+| jdoe | John | Doe | jd |
+| dbasin | David | Basin | db |
+| zkowalski | Zara | Kowalski | zk |
 
+### Internal Users (Internal Purpose Platform)
 
+| uid | first_name | last_name | pwd |
+|-----|------------|-----------|-----|
+| achao | An-Chu | Chao | acc |
+
+---
+
+## 9. Benchmarks
+
+All benchmarks are in the `benchmark/` directory. Each measures the time used across 3 modes (unless noted).
+
+### Prerequisites
+Start all services first (see [How to Run](#4-how-to-run)).
+
+### Commands
+
+**Article 5 & 6** (lawfulness of processing — measured together):
+```bash
+python3 -m benchmark.art5\&6_perf_test --mode all --n 2
 ```
-cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
-./setup_fuse_env.sh 
-./reset_myfs_sudo.sh 
-./run_all.sh 
-sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
 
-```
-THEN
-
-## benchmark command
-### article 5 and article 6 are measured in the same workflow
-because\
-lawful (of article 6) := the system(file system here) **is allowed to process** the DS’s data under the GDPR.
-```
-# Run all 3 modes, 2 iterations each
-python3 -m benchmark.art5&6_perf_test --mode all --n 2
-```
-
-### article 9 workflow 1.5
-article 9 doesn't make sense without LLM, since we use LLM to detect the special data's categories.
-```
-# Run all 3 modes, 2 iterations each
+**Article 9** (special categories — only baseline + gdpr_with_llm, LLM required):
+```bash
 python3 -m benchmark.art9_perf_test --mode baseline --n 2
 python3 -m benchmark.art9_perf_test --mode gdpr_with_llm --n 2
 ```
 
-### article 15 
-workflow 1 (DS with files) -> Output files: art15_wf1_perf_results.csv and matching charts.
-
-workflow 2 (DS with no files) -> Output files: art15_wf2_perf_results.csv and matching charts.
-
-```
+**Article 15** (right of access — 2 workflows):
+```bash
 python3 -m benchmark.art15_perf_test --workflow all --mode all --n 2
 ```
 
-### article 16
-For each workflow,\
-run each command step by step, independently:
-
-#### Workflow 1: Write incorrect data, read, rectify, then read rectified
-```
+**Article 16** (right to rectification — 2 workflows, run each mode independently):
+```bash
+# Workflow 1: write incorrect → read → rectify → read rectified
 python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1
 python3 -m benchmark.art16_perf_test --workflow wf1 --mode gdpr_no_llm --n 1
 python3 -m benchmark.art16_perf_test --workflow wf1 --mode gdpr_with_llm --n 1
-```
 
-#### Workflow 2: Incorrect data already present, rectify and read
-```
+# Workflow 2: incorrect already present → rectify → read
 python3 -m benchmark.art16_perf_test --workflow wf2 --mode baseline --n 1
 python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_no_llm --n 1
 python3 -m benchmark.art16_perf_test --workflow wf2 --mode gdpr_with_llm --n 1
 ```
 
-### article 17
-python3 -m benchmark.art17_perf_test --mode all --n 1
-
-
-### article 30
-article 30 uses article 9, so it doesn't make sense without LLM, since we use LLM to detect the special data's categories.
-
-```
+**Article 17** (right to erasure):
+```bash
 python3 -m benchmark.art17_perf_test --mode all --n 1
 ```
-The `-- mode all` only has `baseline` and `gdpr_with_llm`.
+
+**Article 30** (records of processing — only baseline + gdpr_with_llm):
+```bash
+python3 -m benchmark.art30_perf_test --mode all --n 1
+```
+
+### Enforcer vs LLM Overhead Analysis
+
+The three measurement modes isolate where the performance cost lies:
+
+| Mode | Enforcer | LLM | Purpose |
+|------|----------|-----|---------|
+| `baseline` | No | No | Pure filesystem cost |
+| `gdpr_no_llm` | Yes | No | Enforcer-only overhead |
+| `gdpr_with_llm` | Yes | Yes | Full system with LLM content analysis |
+
+Comparing across modes shows that the **MFOTL enforcer (EnfGuard) adds negligible overhead** — the **LLM (GPT API) dominates execution time**:
+
+| Benchmark | baseline | gdpr_no_llm | gdpr_with_llm | Enforcer overhead | LLM overhead |
+|-----------|----------|-------------|---------------|-------------------|--------------|
+| Art 5&6 | 0.009s | 1.53s | 145.57s | **1.52s** | **144.04s** |
+| Art 16 wf1 | 0.0002s | 0.76s | 15.00s | **0.76s** | **14.24s** |
+
+The enforcer logs events instantly to `gdprfs/gdprfs_trace.log` and evaluates the MFOTL formula in milliseconds. The LLM overhead comes from the HTTP POST to the GPT API (`/analyze-file`), which takes ~10–25s per file depending on content size. This is also visible on the existing per-step charts (`art5&6_per_step.png`, `art16_wf1_per_step.png`): only write steps (which trigger LLM analysis) show significant overhead in `gdpr_with_llm` mode; reads, consent events, and session operations remain fast across all modes.
+
+To generate the overhead decomposition charts:
+```bash
+python3 -m benchmark.enforcer_vs_llm_charts
+```
+
+Output in `benchmark/results/`:
+- `enforcer_vs_llm_overhead.png` — per-article stacked bar (Base FS + Enforcer + LLM)
+- `enforcer_vs_llm_breakdown.png` — averaged overhead breakdown across benchmarks
+
+### Output
+Results are saved in `benchmark/results/` as CSV files and PNG charts.
+
+---
+
+## 10. System Design Decisions
+
+### Two-Layer Architecture (Upper + Mirror)
+The upper layer is the writable working copy visible to users. The mirror layer is a root-only immutable audit copy synced on every write/rename. This ensures a trusted, tamper-proof copy of all accessed data.
+
+### PII Detection: Path Before Content
+The 4-tier PII detection hierarchy (`.gdprowner` > folder name > filename > content) prioritizes path-based inference over expensive content scanning. Rationale: file paths are more reliable PII indicators than content analysis; this avoids unnecessary LLM calls and reduces latency.
+
+### Strong Inheritance
+Once any tier matches (e.g., folder name matches a DS), further tiers are **not evaluated**. This prevents conflicting ownership assignments and avoids unnecessary processing.
+
+### Lazy Evaluation
+- DB mappings are created on first file access, not batch-scanned
+- LLM analysis is skipped if the file content hash (SHA-256) hasn't changed
+- Caches (PDF, CSV) invalidated only on write/rename/open
+
+### Consent Pre-Checks vs. Event Logging
+Consent is checked **before** events are logged to the enforcer. If consent is revoked, the operation is blocked immediately and no audit event is emitted. Event logging only happens if the pre-check passes — the enforcer then decides whether to allow or suppress based on the full MFOTL policy.
+
+### SpecialData Event Deduplication
+The set `_special_data_logged` tracks `(file_id, category)` pairs per open cycle. Multiple reads of the same file in a single session don't re-emit SpecialData events. The set is cleared in `open()` for each new access.
+
+### Per-Person-Per-File Special Categories
+The `PersonFileSpecialCategory` table (vs. global `File.special_categories`) enables fine-grained consent: Alice may consent to "health" data in file X but not "genetic" data in the same file.
+
+### Fail-Open Consent Policy
+If the external consent platform is unreachable, consent is assumed granted. This prevents the filesystem from blocking all access due to platform downtime. The tradeoff is availability over strictness.
+
+### Temporary File Skip
+Editor temporary files are not registered in the DB or analyzed by the LLM. GDPR events are only emitted on the final rename (temp→real save). This avoids audit spam from editor auto-saves.
