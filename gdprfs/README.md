@@ -127,7 +127,7 @@ instrlib/
 │   ├── api.py                           # Flask API (:5005): POST /analyze-file, POST /enable, /disable
 │   ├── agent.py                         # Pydantic-AI agent (with GPT): PII detection, Art 9 categories
 │   ├── models.py                        # Pydantic models: PersonHit, ChunkAnalysis, SpecialDataCategory
-│   └── splitter.py                      # Multi-format file splitting: txt, csv, excel, docx, odt, pdf
+│   └── splitter.py                      # Multi-format file splitting: txt, pdf, csv
 │
 ├── instrlib/                            # Generic runtime enforcement library
 │   ├── instrument.py                    # Operation interception (decorators)
