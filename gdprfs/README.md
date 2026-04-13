@@ -13,7 +13,7 @@ A FUSE-based file system that enforces GDPR compliance at the filesystem level. 
 1. [Architecture](#1-architecture)
 2. [Project Structure](#2-project-structure)
 3. [Setup & Prerequisites](#3-setup--prerequisites)
-4. [How to Run](#4-how-to-run)
+4. [Commands for Executing GDPRFS](#4-commands-for-executing-gdprfs)
 5. [Database Schema](#5-database-schema)
 6. [Core Concepts](#6-core-concepts)
 7. [GDPR Article Implementation Map](#7-gdpr-article-implementation-map)
@@ -202,9 +202,9 @@ sudo python3 gdprfs/setup_db.py
 
 ---
 
-## 4. How to Run
+## 4. Commands for Executing GDPRFS
 
-### Quick Start (Recommended)
+### How to Run
 ```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
 ./setup_fuse_env.sh
@@ -215,7 +215,11 @@ Then in a separate terminal:
 sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
 ```
 
-### Step-by-Step (4 Terminals)
+### How to Stop
+- **External/Internal platforms & LLM Analyzer:** `Ctrl+C` in their terminals
+- **FUSE daemon:** run `./reset_myfs_sudo.sh` from the instrlib directory
+
+### The 4 Terminals that pop up are:
 
 **Terminal 1: External Consent Platform (port 5000):**
 ```bash
@@ -246,10 +250,6 @@ source ~/awscli-venv/bin/activate
 ./reset_myfs_sudo.sh
 sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
 ```
-
-### How to Stop
-- **External/Internal platforms & LLM Analyzer:** `Ctrl+C` in their terminals
-- **FUSE daemon:** run `./reset_myfs_sudo.sh` from the instrlib directory
 
 ### How to Reset Databases (if needed)
 ```bash
@@ -319,7 +319,7 @@ The FUSE daemon mounts at `/tmp/mnt` and maps all operations to the upper layer.
 
 ### 6.2 PII Detection Hierarchy (4 Tiers)
 
-PII ownership is determined in strict priority order — **stops at first match**:
+PII ownership is determined in strict priority order: **stops at first match**:
 
 | Priority | Tier | Source | Example |
 |----------|------|--------|---------|
@@ -351,15 +351,15 @@ PII ownership is determined in strict priority order — **stops at first match*
 
 ## 7. GDPR Article Implementation Map
 
-| Article | Right / Requirement | Implementation | Key files |
-|---------|---------------------|----------------|-----------|
-| **Art 5** | Data accuracy | Rectification causation handler replaces inaccurate data | `myfs.py:rectify_causation_handler()` |
-| **Art 6** | Lawful basis (consent) | Pre-check consent before every read/write; suppress if revoked | `myfs.py:_check_consent()`, `read()`, `_write()` |
-| **Art 9** | Special categories | Per-person-per-file special category tracking; separate consent checks | `models.py:PersonFileSpecialCategory`, `myfs.py:_check_special_consent()` |
-| **Art 15** | Right of access | DS requests access → FUSE packages all their files + manifest into ZIP | `myfs.py:RequestAccess` handler, `/access_download` |
-| **Art 16** | Right to rectification | DS uploads corrected file → FUSE replaces original, re-runs LLM analysis | `myfs.py:rectify_causation_handler()`, `/upload_rectification` |
-| **Art 17** | Right to erasure | DS withdraws all consent + requests erasure → FUSE deletes file from upper + mirror + DB | `myfs.py:delete_causation_handler()`, `external_consent_platform/app.py:withdraw_and_erase()` |
-| **Art 30** | Records of processing | Every enforcement action logged to `ProcessingRecord` table with timestamp | `myfs.py:record_causation_handler()`, `models.py:ProcessingRecord` |
+| Article | Right / Requirement | Implementation |
+|---------|---------------------|----------------|
+| **Art 5** | Principles of processing | Purpose limitation via sessions; accuracy detection |
+| **Art 6** | Lawful basis (consent) | Pre-check consent before every read and write; suppress if revoked |
+| **Art 9** | Special categories | Special category tracking; separate consent checks |
+| **Art 15** | Right of access | DS requests access → FUSE packages all their files + manifest into ZIP  |
+| **Art 16** | Right to rectification | DS uploads corrected file → FUSE replaces original  |
+| **Art 17** | Right to erasure | DS withdraws all consent + requests erasure → FUSE deletes file from upper + mirror + DB |
+| **Art 30** | Records of processing | Every enforcement action logged to `ProcessingRecord` table with timestamp |
 
 ---
 
