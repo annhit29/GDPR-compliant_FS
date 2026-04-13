@@ -904,7 +904,7 @@ class BenchmarkReporter:
                     if len(self.all_results[mode]) > 1 else 0.0
                     for s in steps_no_total]
             offsets = [xi - 0.4 + width * (i + 0.5) for xi in x]
-            ax.bar(offsets, means, width, yerr=stds, label=mode, capsize=2)
+            ax.bar(offsets, means, width, label=mode)
 
         ax.set_xticks(list(x))
         ax.set_xticklabels([s.replace("t_", "") for s in steps_no_total],
@@ -924,7 +924,7 @@ class BenchmarkReporter:
                 if len(self.all_results[m]) > 1 else 0.0
                 for m in modes]
         colors = ["#4c78a8", "#f58518", "#e45756"][:len(modes)]
-        ax.bar(modes, totals, yerr=stds, capsize=5, color=colors)
+        ax.bar(modes, totals, color=colors)
         ax.set_ylabel("Time (s)")
         ax.set_title("Art 9 Workflow -- Total Latency")
         fig.tight_layout()

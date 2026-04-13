@@ -1,8 +1,3 @@
----
-html:
-  embed_local_images: true
----
-
 # GDPR-Compliant File System (GDPRFS)
 
 A FUSE-based file system that enforces GDPR compliance at the filesystem level. Every file operation (read, write, rename, delete) is intercepted and checked against consent policies, PII ownership rules, and GDPR article requirements, all in real time.
@@ -24,6 +19,7 @@ A FUSE-based file system that enforces GDPR compliance at the filesystem level. 
 7. [GDPR Article Implementation Map](#7-gdpr-article-implementation-map)
 8. [Data Subjects & Internal Users](#8-data-subjects--internal-users)
 9. [Benchmarks](#9-benchmarks)
+10. [System Design Decisions](#10-system-design-decisions)
 
 ---
 
@@ -481,3 +477,36 @@ Log scale reveals baseline and enforcer times that are invisible on linear chart
 
 #### Art 30
 ![Art 30 Records of Processing](../benchmark/results/art30_combined.png)
+
+---
+
+## 10. System Design Decisions
+
+### Two-Layer Architecture (Upper + Mirror)
+The upper layer is the writable working copy visible to users. The mirror layer is a root-only immutable audit copy synced on every write and rename. This ensures a trusted, tamper-proof copy of all accessed data.
+
+### PII Detection: Path Before Content
+The 4-tier PII detection hierarchy (`.gdprowner` > folder name > filename > content) prioritizes path-based inference over expensive content scanning. Rationale: file paths are more reliable PII indicators than content analysis; this avoids unnecessary LLM calls and reduces latency.
+
+### Strong Inheritance
+Once any tier matches (e.g., folder name matches a DS), further tiers are **not evaluated**. This prevents conflicting ownership assignments and avoids unnecessary processing.
+
+### Lazy Evaluation
+- DB mappings are created on first file access, not batch-scanned
+- LLM analysis is skipped if the file content hash (SHA-256) hasn't changed
+- Caches (PDF, CSV) invalidated only on write/rename/open
+
+### Consent Pre-Checks vs. Event Logging
+Consent is checked **before** events are logged to the enforcer. If consent is revoked, the operation is blocked immediately and no audit event is emitted. Event logging only happens if the pre-check passes: the enforcer then decides whether to allow or suppress based on the full MFOTL policy.
+
+### SpecialData Event Deduplication
+The set `_special_data_logged` tracks `(file_id, category)` pairs per open cycle. Multiple reads of the same file in a single session don't re-emit SpecialData events. The set is cleared in `open()` for each new access.
+
+### Per-Person-Per-File Special Categories
+The `PersonFileSpecialCategory` table (vs. global `File.special_categories`) enables fine-grained consent: Alice may consent to "health" data in file X but not "genetic" data in the same file.
+
+### Fail-Open Consent Policy
+If the external consent platform is unreachable, consent is assumed granted. This prevents the filesystem from blocking all access due to platform downtime. The tradeoff is availability over strictness.
+
+### Temporary File Skip
+Editor temporary files are not registered in the DB or analyzed by the LLM. GDPR events are only emitted on the final rename (temp→real save). This avoids audit spam from editor auto-saves.
