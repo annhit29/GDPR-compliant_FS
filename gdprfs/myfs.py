@@ -39,8 +39,6 @@ _access_responses = {}  # uid -> {response_id, zip_path}
 
 _current_session_purpose = "marketing"  # updated by StartSession/StopSession
 _save_in_progress_dirs = set()  # directories where a temp→real save is in progress
-# todo: 0) d'autres formats de fichiers <- redacted qd lecture mm pour les txt (suppression handler)
-# 3) declarer manuellement le PII (dans le internal interface, par l'utilisateur interne) <- inspiration: .gitignore
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
 UPPER_DIR  = Path("/var/lib/gdprfs/upper")
@@ -1467,67 +1465,7 @@ class MyFS(Fuse):
 
             return chunk
 
-        # # =========== Case3: ODT paragraph-based enforcement ===========
-        # if str(p).lower().endswith(".odt"):
-        #     print("[ODT] Paragraph-based enforcement for ODT read")
-
-        #     from odf.opendocument import load as load_odt
-        #     from odf.opendocument import OpenDocumentText
-        #     from odf.text import P
-
-        #     # Load original document
-        #     doc = load_odt(str(p))
-        #     paragraphs = doc.getElementsByType(P) # todo: not P mais images, tableaux, alors il faut les ajouter aussi 
-
-        #     # Prepare new redacted document
-        #     new_doc = OpenDocumentText()
-
-        #     fid, _ = _get_file_and_user(_upper(path))
-        #     base_fid = fid or os.path.basename(path)
-
-        #     for idx, para in enumerate(paragraphs):
-        #         text = "".join(
-        #             n.data for n in para.childNodes if hasattr(n, "data")
-        #         ).strip()
-
-        #         # Determine involved UIDs for this paragraph
-        #         uids = []
-        #         for uid_candidate in _uids_from_page_text(text):
-        #             uids.append(uid_candidate)
-
-        #         # If no PII → copy paragraph as-is
-        #         if not uids:
-        #             new_para = P(text=text)
-        #             new_doc.text.addElement(new_para)
-        #             continue
-
-        #         # Build Use events for this paragraph
-        #         para_fid = f"{base_fid}/para-{idx}"
-        #         events = [Event("Use", para_fid, uid) for uid in uids]
-
-        #         cau, sup, _, _ = logger.log(events, threading.Event(), False)
-
-        #         if sup:
-        #             print(f"[ODT] Paragraph {idx} suppressed")
-        #             new_para = P(text="REDACTED")
-        #         else:
-        #             new_para = P(text=text)
-
-        #         new_doc.text.addElement(new_para)
-
-        #     # Serialize the new document into bytes
-        #     from io import BytesIO
-        #     buf = BytesIO()
-        #     new_doc.save(buf)
-        #     redacted_bytes = buf.getvalue()
-
-        #     # Still update DB metadata
-        #     update_file_mapping_for_upper(str(p.resolve()), context="read")
-        #     update_file_metadata(str(p.resolve()), "read")
-
-        #     return redacted_bytes[offset : offset + size]
-
-        # =========== Case4: CSV row-based enforcement ===========
+        # =========== Case3: CSV row-based enforcement ===========
         if str(p).lower().endswith(".csv"):
             print("[CSV] Row-based enforcement for CSV read")
             enforced = self._get_or_build_enforced_csv(path, emit_events=True)
@@ -1535,7 +1473,7 @@ class MyFS(Fuse):
             update_file_metadata(str(p.resolve()), "read")
             return enforced[offset : offset + size]
 
-        # =========== Case5: Fallback case: non-pdf and non-txt files ===========        
+        # =========== Case4: Fallback case: non-pdf and non-txt files ===========        
         # return only the requested slice, as bytes
         with open(p, "rb") as f: # the file is being read from p i.e. from /upper 
             f.seek(offset)
@@ -1728,6 +1666,3 @@ if __name__ == "__main__":
     start_consent_poller() # start the consent poller in the background
     start_ingest_server(logger) # start the ingest HTTP server for Consent/Revoke events
     fs.main()               # enter service loop
-
-
-# todo: What if for ODT, I want to include images and tables too? not only texts
