@@ -16,7 +16,6 @@ def load_gdprowner():
     """
     Parse lines like:
        jdoe: doe/**
-       aturing: research/*
     Returns a list of (uid, pattern)
     """
     rules = []

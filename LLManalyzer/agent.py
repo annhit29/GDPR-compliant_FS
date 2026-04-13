@@ -27,12 +27,12 @@ agent = Agent[ChunkAnalysis](
     model="gpt-5-nano",
     output_type=ChunkAnalysis,
 instructions="""
-You will receive a **JSON string** as the user prompt.
+We will receive a **JSON string** as the user prompt.
 Parse this JSON into two fields:
 
 - text: the text chunk to analyze
 - known_users: list of {"user_id": int, "full_name": str}
-Example of what you will receive (as a string):
+Example of what we will receive (as a string):
 {"text": "...", "known_users": [...]}
 
 

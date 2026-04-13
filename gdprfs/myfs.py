@@ -95,8 +95,8 @@ def _sync_to_mirror(fuse_path: str):
 def _delete_from_mirror(fuse_path: str):
     """
     If the user deletes something from FUSE,
-    Then you delete the corresponding trusted copy in /mirror too
-    (or mark it deleted if you want versioning later).
+    Then we delete the corresponding trusted copy in /mirror too
+    (or mark it deleted if we want versioning later).
     """
     dst = _mirror(fuse_path)
     if dst.exists():
@@ -220,7 +220,7 @@ def _uids_from_page_text(text: str):
                 if person.uid:
                     uids.append(person.uid)
                 else:
-                    # same fallback you already use
+                    # fallback
                     pseudo = (first[:1] + last) if (first or last) else "anonymous"
                     uids.append(pseudo)
 
