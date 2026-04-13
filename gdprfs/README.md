@@ -208,6 +208,7 @@ sudo python3 gdprfs/setup_db.py
 ```bash
 cd ~/MA3/Building_a_GDPR-compliant_file_system/instrlib
 ./setup_fuse_env.sh
+./reset_myfs_sudo.sh
 ./run_all.sh
 ```
 Then in a separate terminal:
@@ -388,7 +389,7 @@ PII ownership is determined in strict priority order: **stops at first match**:
 All benchmarks are in the `benchmark/` directory. Each measures the time used across 3 modes (unless noted).
 
 ### Prerequisites
-Start all services first (see [How to Run](#4-how-to-run)).
+Start all services first (see [How to Run](#how-to-run)).
 
 ### Commands
 
