@@ -32,7 +32,7 @@ type register
 article "5" "Principles relating to processing of personal data"
 
 # predicate := a logical fact, not necc. an event
-# event := sth that the system does.
+# event := something that the system does.
 observable predicate PersonalData
     """Data {d} is personal data of data subject {ds}"""
     d : data

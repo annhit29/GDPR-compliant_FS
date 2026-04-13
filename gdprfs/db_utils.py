@@ -1,4 +1,3 @@
-from ast import pattern
 from pathlib import Path
 from gdprfs.models import Person, File, Session
 from datetime import datetime
@@ -152,43 +151,30 @@ def _get_text_for_matching(p: Path) -> str | None:
     """
     ext = p.suffix.lower()
 
-    # print(f"[DB][EXTRACT] Processing file: {p} (ext={ext})")
-
     # Try reading as plain text ONLY for obvious text formats
     if ext in [".txt", ".csv", ".json", ".md", ".log"]:
-        # print("[DB][EXTRACT] Trying UTF-8 plain text read")
         try:
             txt = p.read_text(encoding="utf-8")
 
-            # print("[DB][EXTRACT] UTF-8 plain text read SUCCESS")
-            # print("[DB][EXTRACT] Preview (first 200 chars):")
-            # print(txt[:200])
-            return txt # is the txt or csv or other listed above format
+            return txt
         except UnicodeDecodeError:
             print("[DB][EXTRACT] UTF-8 plain text read FAILED, falling back")
             pass
 
     # Fall back to rich extractors for binary formats
     if ext == ".pdf":
-        # print("[DB][EXTRACT] Using PDF extractor")
         text = _extract_pdf_to_text(str(p))
-        # print("[DB][EXTRACT] PDF extractor output preview (first 200 chars):")
-        # print(text[:200])
         return text
 
     if ext == ".docx":
         return _extract_docx_to_text(str(p))
     if ext == ".odt":
-        print("[DB][EXTRACT] Using ODT extractor")
         text = _extract_odt_to_text(str(p))
-        print("[DB][EXTRACT] ODT extractor output preview (first 200 chars):")
-        print(text[:200])
         return text
     if ext in [".xls", ".xlsx"]:
         return _extract_excel_to_text(str(p))
 
-    # Unsupported binary format
-    print("[DB][EXTRACT] Unsupported file type → returning None")
+    # else: unsupported binary format
     return None
 
 def rescan_all_upper_files():
@@ -216,7 +202,6 @@ def update_file_metadata(file_path: str, last_action: str):
     with Session() as session:
         f = session.query(File).filter_by(file_id=p.name).first()
         if not f:
-            # print(f"[DB] Warning: File {p.name} not found in DB for metadata update.")
             return
         
         # Always refresh absolute path (in case file was renamed/moved)
@@ -349,7 +334,7 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
                     person.files.append(f)
                     print(f"[lazy DB folder] Linked (folder) {person.first_name} {person.last_name} ↔ {file_id}")
 
-            # IMPORTANT: stop here: coz no need to analyze contents, coz path reveals PII
+            # IMPORTANT: stop here: because no need to analyze contents, because path reveals PII
             session.commit()
             print(f"[lazy DB folder] Finished mapping for folder `{p.parent.name}` ({person.uid} ↔ {file_id}, context={context}), folder-based only")
             return   # <--- STRONG INHERITANCE: STOP HERE
@@ -362,7 +347,7 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
                     person.files.append(f)
                     print(f"[DB filename] Linked (filename) {person.first_name} {person.last_name} ↔ {file_id}")
             
-            # IMPORTANT: stop here: coz no need to analyze contents, coz path reveals PII
+            # IMPORTANT: stop here: because no need to analyze contents, because path reveals PII
             session.commit()
             print(f"[DB filename] Finished mapping for {file_id} (context={context}), filename-based only")
             return   # <--- STRONG INHERITANCE: STOP HERE
@@ -373,7 +358,7 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
             return
 
         if content.strip():
-            # 2) Loop over known users (Person):
+            # Loop over known users (Person):
             people = session.query(Person).all()
 
             # naive case-insensitive search

@@ -37,4 +37,4 @@ print("RAW OUTPUT:", raw)
 parsed = ChunkAnalysis.model_validate(json.loads(raw))
 
 print("STRUCTURED:", parsed)
-print("DICT:", parsed.model_dump()) # to convert from Pydantic model to dict coz json.dumps can't serialize Pydantic models directly
+print("DICT:", parsed.model_dump()) # to convert from Pydantic model to dict because json.dumps can't serialize Pydantic models directly

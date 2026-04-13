@@ -29,7 +29,7 @@ def analyze_file():
 
     data = request.json
     path = data["path"]
-    known_users = data.get("known_users", []) # <- wanna scale up, so
+    known_users = data.get("known_users", [])
 
     chunks = split_file(path)
     results = []

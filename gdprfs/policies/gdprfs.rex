@@ -116,7 +116,7 @@ rule "r_DataProcessing_Use"
   whenever
     Use(d, _)
   refine
-    DataProcessing("GDPRFS", "GDPRFS", "Use", d) #l39 #"Use" activity coz gdpr.lex l42: Data d is processed by processor "GDPRFS" on behalf of controller "GDPRFS" as part of data processing activity "Use"
+    DataProcessing("GDPRFS", "GDPRFS", "Use", d) #l39 #"Use" activity because gdpr.lex l42: Data d is processed by processor "GDPRFS" on behalf of controller "GDPRFS" as part of data processing activity "Use"
 #or
 rule "r_DataProcessing_Write"
   whenever
@@ -138,7 +138,7 @@ rule "r_HasPurpose" #gdpr.lex l67: Data processing activity a has purpose p
     #a session has started, and not yet stopped. := the same session
     # this session has this event Use.
   refine
-    HasPurpose("Use", p) #"Use" activity coz gdpr.lex l67: Data processing activity "Use" has purpose p
+    HasPurpose("Use", p) #"Use" activity because gdpr.lex l67: Data processing activity "Use" has purpose p
 
 # r_HasPurpose is also for art5b rule "purpose_conditions" (l183)
 #because gdpr.lex's rule "purpose_conditions" is triggered by HasPurpose event, i.e.
@@ -164,7 +164,7 @@ rule "r_IsCollection"
     whenever
         Collect(d, ds)
     refine
-        IsCollection("Collect", ds) #"Collect" activity coz gdpr.lex l63: """Data processing activity Collect collects personal data from data subject {ds}"""
+        IsCollection("Collect", ds) #"Collect" activity because gdpr.lex l63: """Data processing activity Collect collects personal data from data subject {ds}"""
 # Collect event refines to IsCollection event. i.e. Collect replaces IsCollection event.
 
 #art5b rule "general_purpose"
@@ -187,7 +187,7 @@ assume true IsLimitedToWhatIsNecessary
 
 #art5d rule "accurate_and_up_to_date"
 
-#Write event but not Use event, coz "Data must be accurate and, where necessary, kept up to date." i.e. "If data is inaccurate, Then I must **correct** it."
+#Write event but not Use event, because "Data must be accurate and, where necessary, kept up to date." i.e. "If data is inaccurate, Then I must **correct** it."
 #it's an limitation: no Writes yet when I first Read the files
 assume true IsAccurate
 assume true IsUpToDate
@@ -202,16 +202,6 @@ assume false UndueDataDelay
 #so Every write operation counts as correcting the data.
 
 #unrefine Rectify
-#assume true Rectify
-#    """Data is rectified whenever it is written. The old data in the file is rectified to the new data in the file."""
-    
-#rule "r_Rectify"
-#  whenever
-#    Write(fid, p)
-#  refine
-#    Rectify(fid, fid) #allowed, coz we're updating data in file id, so old_data => fid, old_data => fid ?  
-# Write event refines to Rectify event. i.e. Write replaces Rectify event. 
-# coz Writing is considered a correction/rectification.
 
 #art5e rule "temporal_storage_limitation"
 

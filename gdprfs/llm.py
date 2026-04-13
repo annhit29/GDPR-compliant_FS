@@ -15,8 +15,6 @@ def _is_typo(a, b):
         return True
     if len(a) > 1 and len(b) > 1: # avoid too short strings
         dist = distance(a, b)
-        print(f'{dist=}')
-        print(f'{dist <= 3=}')
         return dist <= 3
     return False
 
@@ -59,7 +57,6 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                         .filter(func.lower(NameAlias.alias) == alias_norm)
                         .first()
                     )
-                    print(f'{alias_row=}')
 
                     if alias_row:
                         # Human already confirmed: alias → canonical person
@@ -72,7 +69,6 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                             .filter(and_(Person.first_name == first, Person.last_name == last))
                             .first()
                         )
-                        print(f'{person=}')
                         if not person:
                             person = Person(
                                 first_name=first,

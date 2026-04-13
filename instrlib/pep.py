@@ -40,7 +40,7 @@ class PEP:
         mapping                 : Dict[Tuple[str, str], Callable[..., list[Event]]] = {},  # map from function to action(s)
         suppression_handlers    : Dict[Union[str, Tuple[str, ...]], Any]            = {}, 
         causation_handlers      : Dict[Union[str, Tuple[str, ...]], Any]            = {},
-        instrumentation_mapping : InstrumentationMapping | None                     = None, #eg: Tuple[str, str] = [le user "read", "User.first_name"] =mapsTo> Callable[argument(s) des fonctions] et retourne list[Event] aka les evenements
+        instrumentation_mapping : InstrumentationMapping | None                     = None, #eg: Tuple[str, str] = [le user "read", "User.first_name"] =mapsTo> Callable[argument(s) des fonctions] et retourne list[Event] i.e. les evenements
 
     ):
         self.mapping : Dict[Tuple[str, str], Any] = {}

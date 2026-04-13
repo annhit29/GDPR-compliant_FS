@@ -63,19 +63,18 @@ for f in UPPER_DIR.glob(".goutputstream-*"):
     f.unlink(missing_ok=True)
 
 #  ========== HELPER FUNCTIONS ==========
-# to keep things clean, modular, and reusable
 
 def _upper(path: str) -> Path:
     """
     Map FUSE path to the real file path in UPPER_DIR
-    aka Find the real file in the upper dir
+    i.e. Find the real file in the upper dir
     """
     return (UPPER_DIR / path.lstrip("/")).resolve()
 
 def _mirror(path: str) -> Path:
     """
     Map FUSE path to the real file path in MIRROR_DIR
-    aka Find the real file in the mirror dir
+    i.e. Find the real file in the mirror dir
     """
     return (MIRROR_DIR / path.lstrip("/")).resolve()
 
@@ -308,7 +307,7 @@ def events_for_read(path):
 
     # Case 1: temporary gedit files (.goutputstream-XXXX)
     if base.startswith(".goutputstream-"):
-        return []  # No event, coz final Write will be emitted at rename()
+        return []  # No event, because final Write will be emitted at rename()
 
     # Sanitize LibreOffice lock files: .~lock.fhublet.csv# → fhublet.csv
     real_base = base
@@ -323,7 +322,6 @@ def events_for_read(path):
     # Case 2: normal file read → Use(fid, purpose, uid)
     fid, uids = _get_file_and_user(lookup_path)
     fid = fid or real_base
-    print("fid line244 is: ", fid)
 
     events = []
     with Session() as session:
@@ -347,7 +345,6 @@ def events_for_read(path):
                 uid = (first[:1] + last) if first or last else "anonymous"
 
             events.append(Event("Use", fid, uid))
-            # events.append(Event("Use", fid, "marketing", uid))
 
     print(f"[GDPR] Emitting {len(events)} Use events for {fid}: {[e.args for e in events]}")
 
@@ -422,23 +419,23 @@ schema.add('Revoke', [str, str]) # for revoke consent events
 schema.add('RequestAccess', [str]) # request all DS data events from the FS
 schema.add('RequestErasure', [str, str]) # request erasure of all DS data events in the FS
 
-#for art16
+# for art16
 schema.add('RequestRectification', [str, str, str])  # Art 16: (uid, fid_old, fid_new)
 
 schema.add('RequestResponse', [str, str, str])
 
 schema.add('Contains', [str, str])
 
-#for art9
+# for art9
 schema.add('Rectify', [str, str]) # for rectification events
 schema.add('SpecialConsent', [str, str, str]) # for special category data consent (uid, purpose, spCat)
 schema.add('RevokeSpecialConsent', [str, str, str]) # for revoking special category data consent (uid, purpose, spCat)
 schema.add('SpecialData', [str, str]) # for special category data (file_id, spCat)
 
-#for art13 and art15
+# for art13 and art15
 schema.add('IsCategory', [str, str])
 
-#for art30
+# for art30
 schema.add('Record', [str, str, str, str, str]) # for recording an event in the data subject's record
 
 # ========== HANDLERS ==========
@@ -516,9 +513,9 @@ def record_causation_handler(event_list):
 
 def none_handler(event_name, event_args, response, *args, **kwargs):
     """
-    Python side  =/= Enforcer side
-    The none_handler means "do nothing" in the python side (if I wanna return or print sth on the terminal).
-    and the enforcer is actually suppressing or causing a file operation.
+    Python side ≠ Enforcer side
+    The none_handler means "do nothing" in the python side (if we want to return or print something on the terminal).
+    And the enforcer suppresses or causes a file operation.
     """
     return None
 
@@ -534,7 +531,6 @@ causation_handlers = {
 
 # ========== MAPPINGS ==========
 def read_mapping(action):  
-    print(f'[read_mapping DEBUG] {str(action)}')
     return Event('Use', str(action), 'userid1')
 
 def write_mapping(action): return Event('Write', str(action), _current_session_purpose)
@@ -584,7 +580,7 @@ pep = PEP(
         ('MyFS', 'write'): Functional('Write', lambda path, *a, **kw: events_for_write_or_skip(path)),
     },
     suppression_handlers=suppression_handlers,
-    causation_handlers=causation_handlers#,
+    causation_handlers=causation_handlers
 )
 
 pdp = EnfGuard(INSTRLIB_EXE, INSTRLIB_SIG, INSTRLIB_FORMULA, log_file=INSTRLIB_LOG)
@@ -639,8 +635,6 @@ def start_ingest_server(logger):
                 # --- Branch 1: handle Consent/Revoke events ---
 
                 if self.path == "/ingest":
-                    # length = int(self.headers.get("Content-Length", "0"))
-                    # payload = json.loads(self.rfile.read(length) or b"{}")
                     kind = str(payload.get("kind", "")).strip() # is the event name, e.g. "Consent", "Revoke", "RequestAccess", "RequestErasure", "StartSession", "StopSession"
                     uid = payload.get("uid")
                     purpose = str(payload.get("purpose", "")).strip()
@@ -812,7 +806,7 @@ def start_ingest_server(logger):
                         }).encode())
                         return
 
-                    # CASE 4: Consent/Revoke or others (already handled)
+                    # CASE 6: Consent/Revoke or others (already handled)
                     # Create a generic Event, supporting any kind
                     # If purpose missing, drop it automatically
                     elif purpose: # if purpose is provided && it's not the StopSession event
@@ -892,7 +886,7 @@ class InstrumentNoAttr(Instrument):
             # Skip overwriting get/set attribute ONLY for Fuse subclasses
             try:
                 from fuse import Fuse as FuseBase
-                if issubclass(target, FuseBase):# to avoid overwriting __getattribute__ and __setattribute__ of Fuse-based classes
+                if issubclass(target, FuseBase):
                     return self.instrument_cls(target)
             except Exception:
                 pass
@@ -907,7 +901,6 @@ class MyFS(Fuse):
     """A minimal GDPR-compliant FUSE filesystem."""
 
     def _write(self, path, data, offset, fh=None):
-        # print(f"[DEBUG write] called with path={path}, data = {data}, data_len={len(data)}, offset={offset}", flush=True)
         p = _upper(path)
 
         # Ensure the parent folder exists
@@ -942,7 +935,6 @@ class MyFS(Fuse):
 
         # --- skip temp files ---
         if not _is_temp_name(path):
-            # print("before trying to update mapping in _write")
             try:
                 update_file_mapping_for_upper(str(p.resolve()), context="write")
                 update_file_metadata(str(p.resolve()), "write")
@@ -1055,12 +1047,9 @@ class MyFS(Fuse):
         reader = PdfReader(str(abspath))
 
         # 2) Figure out base fid + uids for this file
-        # fid_base, uids = _get_file_and_user(abspath)
         fid_base, _ = _get_file_and_user(abspath)
         if not fid_base:
             fid_base = os.path.basename(abspath)
-        # if not uids:
-        #     uids = ["anonymous"]
 
         writer = PdfWriter()
 
@@ -1209,7 +1198,7 @@ class MyFS(Fuse):
         CSV_CACHE[abspath] = {"enforced_bytes": csv_bytes, "mtime": mtime}
         return csv_bytes
 
-    def getattr(self, path): #v
+    def getattr(self, path):
         """
         Return the attributes of a file or directory.
         (e.g. size, permissions, owner, timestamps)
@@ -1220,11 +1209,6 @@ class MyFS(Fuse):
         real_path = _upper(path)
 
         if not real_path.exists():
-            # print("ghost file")
-            '''
-            These ghost files are simply there coz the FS is asking if these ghost filenames exist in the FS, not because it's creating them.
-            They only show up in the logs since each “Does this file exist?” question triggers a check inside the FUSE filesystem.
-            '''
             raise OSError(ENOENT, "No such file or directory")
 
         # Get the actual file info from disk
@@ -1328,8 +1312,7 @@ class MyFS(Fuse):
 
         return 0
 
-    def readdir(self, path, offset): #v
-        print(f"[DEBUG readdir] called with path={path}", flush=True)
+    def readdir(self, path, offset):
         from fuse import Direntry
         p = _upper(path)
         if not p.is_dir():
@@ -1351,7 +1334,6 @@ class MyFS(Fuse):
         raise OSError(ENOENT, "No such file or directory")
 
     def open(self, path, flags):
-        print("in open")
 
         # Clear SpecialData dedup tracking for this new open cycle
         _special_data_logged.clear()
@@ -1380,7 +1362,6 @@ class MyFS(Fuse):
         raise OSError(ENOENT, "No such file or directory")
 
     def read(self, path, size, offset, fh=None):
-        print("read file")
 
         if isinstance(size, (bytes, bytearray)): #if size is data instead of int
             print(f"[WRITE] Misrouted write() detected: redirecting safely to raw write for {path}")
@@ -1478,8 +1459,6 @@ class MyFS(Fuse):
         with open(p, "rb") as f: # the file is being read from p i.e. from /upper 
             f.seek(offset)
             data = f.read(size)
-
-        print(f"[READ] path={path} reading from {p}, {len(data)} bytes, size={size}, offset={offset}, returning={data}")
         
         update_file_mapping_for_upper(str(p.resolve()), context="read") 
         update_file_metadata(str(p.resolve()), "read") # update timestamps + last_action
@@ -1493,7 +1472,7 @@ class MyFS(Fuse):
         _ensure_parent(p)
 
         # Create file in upper layer
-        # I opened the file, now it exists, even if I didn’t write on it yet.
+        # We opened the file, now it exists, even if we didn’t write on it yet.
         with open(p, "wb") as f:
             pass # create empty file
 
@@ -1515,7 +1494,6 @@ class MyFS(Fuse):
 
         except Exception as e:
             print(f"[DB] Warning: failed to register new file {p}: {e}")
-
 
         return 0
 
@@ -1573,7 +1551,6 @@ class MyFS(Fuse):
                 # Update DB for the final file
                 update_file_mapping_for_upper(str(new_p.resolve()), context=context)
                 update_file_metadata(str(new_p.resolve()), context)
-                # print(f"[DB] Updated mapping for final save {new}")
 
                 # Emit the GDPR Write event for the real file
                 self._emit_write_event(new)
@@ -1609,7 +1586,6 @@ class MyFS(Fuse):
         return 0
 
     def write(self, path, data, offset, fh=None):
-        print("I am in the 'real' write function")
         return self._write(path, data, offset, fh)
 
     def unlink(self, path):
@@ -1652,12 +1628,12 @@ if __name__ == "__main__":
     fs = MyFS()
     fs.parse() # parse FUSE args
     import gc
-    gc.collect() # clean up the memory (eg: files already deleted for a very long time) before mounting
+    gc.collect() 
     
     def start_consent_poller():
         try:
             subprocess.Popen(
-                ["python3", "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform/poller.py"]#,
+                ["python3", "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/external_consent_platform/poller.py"]
             )
             print("[INIT] Consent poller started in background.") # means this FS successfully launched the poller daemon via subprocess.Popen().
         except Exception as e:

@@ -14,7 +14,7 @@ class File(Base):
     id = Column(Integer, primary_key=True)
     file_id = Column(String, unique=True, nullable=False)
     abs_path = Column(Text) # absolute path
-    #timestamps:
+    # timestamps:
     created_at = Column(String)
     modified_at = Column(String)
     accessed_at = Column(String)
@@ -29,12 +29,12 @@ class File(Base):
 class Person(Base):
     __tablename__ = "person"
     id = Column(Integer, primary_key=True)
-    uid = Column(String, unique=True) # the user identifier field  # this field can be NULL for potential users
+    uid = Column(String, unique=True) # the user identifier field. This field can be NULL for potential users
     first_name = Column(String)
     last_name = Column(String)
     registered = Column(Boolean, default=False)  # 0 = False  = potential user or not-yet-registered user, 1 = True = registered user
     files = relationship("File", secondary=person_file_map, back_populates="people")
-    aliases = relationship("NameAlias", backref="person", cascade="all, delete") # list of NameAlias objects to allow the LLM auto-detects aliases
+    aliases = relationship("NameAlias", backref="person", cascade="all, delete") # list of NameAlias objects to allow the LLM to auto-detect aliases
 
 class PersonFileSpecialCategory(Base):
     """Per-person-per-file Art 9 special data categories.
@@ -68,10 +68,8 @@ class NameAlias(Base):
     person_id = Column(Integer, ForeignKey("person.id"), nullable=False)
 
 # Shared engine + session
-# ENGINE = create_engine("sqlite:///gdprfs.db")
 ENGINE = create_engine("sqlite:////home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs.db")
 Session = sessionmaker(bind=ENGINE)
-# print("[GDPRFS] Using DB at:", ENGINE.url)
 
 # Ensure all tables exist (safe to call repeatedly — only creates missing tables)
 Base.metadata.create_all(ENGINE)
