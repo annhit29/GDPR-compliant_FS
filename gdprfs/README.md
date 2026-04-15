@@ -358,16 +358,16 @@ All benchmarks are in the `benchmark/` directory. Each measures the time used ac
 ### Prerequisites
 Start all services first (see [How to Run](#how-to-run)).
 
-### Commands
+### Workflow Descriptions & Commands
 
-| Article | Modes | Command |
-|---------|-------|---------|
-| **5 & 6** | all 3 | `python3 -m benchmark.art5\&6_perf_test --mode all --n 1` |
-| **9** | baseline + with_llm (requires LLM) | `python3 -m benchmark.art9_perf_test --mode baseline --n 1` then `--mode gdpr_with_llm` |
-| **15** | baseline + no_llm (no LLM needed) | `python3 -m benchmark.art15_perf_test --workflow all --mode all --n 1` |
-| **16** | all 3, per workflow | `python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1` (repeat for each mode and wf2) |
-| **17** | baseline + no_llm (no LLM needed) | `python3 -m benchmark.art17_perf_test --mode all --n 1` |
-| **30** | baseline + with_llm (requires LLM) | `python3 -m benchmark.art30_perf_test --mode all --n 1` |
+| Article | Workflow description | Steps | Modes | Command |
+|---------|---------------------|-------|-------|---------|
+| **5 & 6** | session start → consent → copy → merge resolution → read → close → rename → read → close → write (overwrite) → read → revoke → read (expect REDACTED) → re-consent → read → delete → session stop. **17 steps**, 4 of which trigger writes (copy, rename, write) and thus LLM calls in `gdpr_with_llm` mode, this is why it takes 144s. | 17 | all 3 | `python3 -m benchmark.art5\&6_perf_test --mode all --n 1` |
+| **9** | create empty file → progressively grant regular + special consent per DS per category → write content with increasing special categories (genetic+health+biometric+racial) → rename (adds new DS) → grant new DS consent → write again → revoke/re-consent special. **36 steps** with 4 writes triggering LLM. | 36 | baseline + with_llm | `python3 -m benchmark.art9_perf_test --mode baseline --n 1` then `--mode gdpr_with_llm` |
+| **15** | **wf1** DS with files: RequestAccess triggers FUSE to package all DS files + manifest into a ZIP, then download and verify contents. **wf2** DS with no files: same flow but ZIP contains only an empty manifest. **2 steps** each (request + download). | 2 | all 3 | `python3 -m benchmark.art15_perf_test --workflow all --mode all --n 1` |
+| **16** | **wf1**: Write incorrect data → read → rectify (upload corrected file + RequestRectification + wait for enforcer to swap) → read rectified. **8 steps**, 1 write triggers LLM. **wf2**: File already has incorrect data → rectify → read. **5 steps**, no write, so no LLM overhead. | 8 / 5 | all 3 | `python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1` (repeat for each mode and wf2) |
+| **17** | Consent (regular + 4 special categories) → revoke all (regular + 4 special) + RequestErasure → enforcer deletes file from upper + mirror + DB → session stop. **4 steps**. No writes, so no LLM overhead. | 4 | all 3 | `python3 -m benchmark.art17_perf_test --mode all --n 1` |
+| **30** | Read a special-category file → write (replace `.` with `:(`) → rename → rename back → revoke special consent → read (expect REDACTED) → session stop. **11 steps**, 1 write triggers LLM. | 11 | baseline + with_llm | `python3 -m benchmark.art30_perf_test --mode all --n 1` |
 
 Note: 
 - For article 15 and article 17, no LLM is required, because we test each article independently.

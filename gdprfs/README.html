@@ -663,11 +663,13 @@ External Consent Platform (:5000)    Internal Purpose Platform (:8000)
 <p>All benchmarks are in the <code>benchmark/</code> directory. Each measures the time used across 3 modes (unless noted).</p>
 <h3 id="prerequisites">Prerequisites </h3>
 <p>Start all services first (see <a href="#how-to-run">How to Run</a>).</p>
-<h3 id="commands">Commands </h3>
+<h3 id="workflow-descriptions--commands">Workflow Descriptions &amp; Commands </h3>
 <table>
 <thead>
 <tr>
 <th>Article</th>
+<th>Workflow description</th>
+<th>Steps</th>
 <th>Modes</th>
 <th>Command</th>
 </tr>
@@ -675,32 +677,44 @@ External Consent Platform (:5000)    Internal Purpose Platform (:8000)
 <tbody>
 <tr>
 <td><strong>5 &amp; 6</strong></td>
+<td>session start → consent → copy → merge resolution → read → close → rename → read → close → write (overwrite) → read → revoke → read (expect REDACTED) → re-consent → read → delete → session stop. <strong>17 steps</strong>, 4 of which trigger writes (copy, rename, write) and thus LLM calls in <code>gdpr_with_llm</code> mode, this is why it takes 144s.</td>
+<td>17</td>
 <td>all 3</td>
 <td><code>python3 -m benchmark.art5\&amp;6_perf_test --mode all --n 1</code></td>
 </tr>
 <tr>
 <td><strong>9</strong></td>
-<td>baseline + with_llm (requires LLM)</td>
+<td>create empty file → progressively grant regular + special consent per DS per category → write content with increasing special categories (genetic+health+biometric+racial) → rename (adds new DS) → grant new DS consent → write again → revoke/re-consent special. <strong>36 steps</strong> with 4 writes triggering LLM.</td>
+<td>36</td>
+<td>baseline + with_llm</td>
 <td><code>python3 -m benchmark.art9_perf_test --mode baseline --n 1</code> then <code>--mode gdpr_with_llm</code></td>
 </tr>
 <tr>
 <td><strong>15</strong></td>
-<td>baseline + no_llm (no LLM needed)</td>
+<td><strong>wf1</strong> DS with files: RequestAccess triggers FUSE to package all DS files + manifest into a ZIP, then download and verify contents. <strong>wf2</strong> DS with no files: same flow but ZIP contains only an empty manifest. <strong>2 steps</strong> each (request + download).</td>
+<td>2</td>
+<td>all 3</td>
 <td><code>python3 -m benchmark.art15_perf_test --workflow all --mode all --n 1</code></td>
 </tr>
 <tr>
 <td><strong>16</strong></td>
-<td>all 3, per workflow</td>
+<td><strong>wf1</strong>: Write incorrect data → read → rectify (upload corrected file + RequestRectification + wait for enforcer to swap) → read rectified. <strong>8 steps</strong>, 1 write triggers LLM. <strong>wf2</strong>: File already has incorrect data → rectify → read. <strong>5 steps</strong>, no write, so no LLM overhead.</td>
+<td>8 / 5</td>
+<td>all 3</td>
 <td><code>python3 -m benchmark.art16_perf_test --workflow wf1 --mode baseline --n 1</code> (repeat for each mode and wf2)</td>
 </tr>
 <tr>
 <td><strong>17</strong></td>
-<td>baseline + no_llm (no LLM needed)</td>
+<td>Consent (regular + 4 special categories) → revoke all (regular + 4 special) + RequestErasure → enforcer deletes file from upper + mirror + DB → session stop. <strong>4 steps</strong>. No writes, so no LLM overhead.</td>
+<td>4</td>
+<td>all 3</td>
 <td><code>python3 -m benchmark.art17_perf_test --mode all --n 1</code></td>
 </tr>
 <tr>
 <td><strong>30</strong></td>
-<td>baseline + with_llm (requires LLM)</td>
+<td>Read a special-category file → write (replace <code>.</code> with <code>:(</code>) → rename → rename back → revoke special consent → read (expect REDACTED) → session stop. <strong>11 steps</strong>, 1 write triggers LLM.</td>
+<td>11</td>
+<td>baseline + with_llm</td>
 <td><code>python3 -m benchmark.art30_perf_test --mode all --n 1</code></td>
 </tr>
 </tbody>
