@@ -67,18 +67,17 @@ External Consent Platform (:5000)    Internal Purpose Platform (:8000)
 ### Communication Matrix
 | From | To | Port | Endpoint | Implemented in (= where the server route is defined) | Purpose |
 |------|----|------|----------|----------------|---------|
-| Poller | External Platform | 5000 | `GET /api/events?status=pending` | `external_consent_platform/api.py` | Fetch all pending consent events |
-| Poller | External Platform | 5000 | `PATCH /api/events/{id}/ack` | `external_consent_platform/api.py` | Acknowledge processed event |
-| Poller | FUSE Daemon | 7000 | `POST /ingest` | `gdprfs/myfs.py` | Forward consent and request events |
-| Internal Platform | FUSE Daemon | 7000 | `POST /ingest` | `gdprfs/myfs.py` | StartSession and StopSession |
-| External Platform | FUSE Daemon | 7000 | `POST /sync_users` | `gdprfs/myfs.py` | Notify new DS registration |
-| External Platform | FUSE Daemon | 7000 | `POST /upload_rectification` | `gdprfs/myfs.py` | Art 16 file staging |
-| External Platform | FUSE Daemon | 7000 | `GET /access_status/{uid}` | `gdprfs/myfs.py` | Art 15 status check |
-| External Platform | FUSE Daemon | 7000 | `GET /access_download/{id}` | `gdprfs/myfs.py` | Art 15 ZIP download |
-| FUSE Daemon | External Platform | 5000 | `GET /api/consents/{uid}/{purpose}` | `external_consent_platform/api.py` | Check regular consent (Art 6) |
-| FUSE Daemon | External Platform | 5000 | `GET /api/consents/special/{uid}/{spCat}` | `external_consent_platform/api.py` | Check special data categories consent (Art 9) |
-| FUSE Daemon | External Platform | 5000 | `GET /api/users` | `external_consent_platform/api.py` | Sync registered users |
-| FUSE Daemon | LLM Analyzer | 5005 | `POST /analyze-file` | `LLManalyzer/api.py` | PII + Art 9 content analysis |
+| Poller | DS Interface | 5000 | `GET /api/events?status=pending` | `external_consent_platform/api.py` | Fetch all pending consent events |
+| Poller | DS Interface | 5000 | `PATCH /api/events/{id}/ack` | `external_consent_platform/api.py` | Acknowledge processed event |
+| Poller | Ingest Server | 7000 | `POST /ingest` | `gdprfs/myfs.py` | Forward consent and request events |
+| Internal Purpose Platform | Ingest Server | 7000 | `POST /ingest` | `gdprfs/myfs.py` | StartSession and StopSession |
+| DS Interface | Ingest Server | 7000 | `POST /sync_users` | `gdprfs/myfs.py` | Notify new DS registration |
+| DS Interface | Ingest Server | 7000 | `POST /upload_rectification` | `gdprfs/myfs.py` | Art 16 file staging |
+| DS Interface | Ingest Server | 7000 | `GET /access_status/{uid}` | `gdprfs/myfs.py` | Art 15 status check |
+| DS Interface | Ingest Server | 7000 | `GET /access_download/{id}` | `gdprfs/myfs.py` | Art 15 ZIP download |
+| PDP | DS Interface | 5000 | `GET /api/consents/{uid}/{purpose}` | `external_consent_platform/api.py` | Check regular consent (Art 6) |
+| PDP | DS Interface | 5000 | `GET /api/consents/special/{uid}/{spCat}` | `external_consent_platform/api.py` | Check special data categories consent (Art 9) |
+| PDP | DS Interface | 5000 | `GET /api/users` | `external_consent_platform/api.py` | Sync registered users |
 
 ---
 
