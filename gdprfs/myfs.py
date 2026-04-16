@@ -38,6 +38,7 @@ REDACTED_TEMPLATE = Path("/var/lib/gdprfs/redacted_template.pdf")
 _access_responses = {}  # uid -> {response_id, zip_path}
 
 _current_session_purpose = "marketing"  # updated by StartSession/StopSession
+_session_active = False  # True only between StartSession and StopSession
 _save_in_progress_dirs = set()  # directories where a temp→real save is in progress
 
 # run as root to have access to /dev/fuse and /var/lib/gdprfs
@@ -630,7 +631,7 @@ def start_ingest_server(logger):
                 self.send_error(404, "Unknown endpoint")
                 
         def do_POST(self):
-            global _current_session_purpose
+            global _current_session_purpose, _session_active
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 payload = json.loads(self.rfile.read(length) or b"{}")
@@ -652,11 +653,13 @@ def start_ingest_server(logger):
                             self.send_error(400, "missing purpose or reason for StartSession")
                             return
                         _current_session_purpose = purpose
+                        _session_active = True
                         evt = Event("StartSession", uid, purpose, reason)
 
                     # CASE 2: StopSession(uid)
                     elif kind == "StopSession":
                         _current_session_purpose = "marketing"
+                        _session_active = False
                         evt = Event("StopSession", uid)
 
                     # CASE 3a: SpecialConsent(uid, purpose, spCat) of Art 9
@@ -908,10 +911,14 @@ class MyFS(Fuse):
         # Ensure the parent folder exists
         _ensure_parent(p)
 
-        # GDPR pre-check: block writes to non-temp files if consent is missing
+        # GDPR pre-check: block writes to non-temp files if session/consent is missing
         if not _is_temp_name(path):
             _, uids = _get_file_and_user(p)
             if uids:
+                # Art 5b: no active session → block write (purpose limitation)
+                if not _session_active:
+                    print(f"[GDPR Art5b] Blocking write to {path}: no active session (purpose limitation)")
+                    raise OSError(EACCES, "GDPR policy: write requires an active session (Art 5b purpose limitation)")
                 # Art 6: check regular consent
                 for uid in uids:
                     if not _check_consent(uid, _current_session_purpose):
@@ -1067,13 +1074,19 @@ class MyFS(Fuse):
                 writer.add_page(page)
                 continue
 
-            # Pre-check: if any data subject lacks consent, redact without logging
+            # Pre-check Art 5b: no active session → redact page (purpose limitation)
             skip_page = False
-            for uid in uids:
-                if not _check_consent(uid, _current_session_purpose):
-                    print(f"[GDPR] {uid} has no consent → redacting page {idx} (no Use event logged)")
-                    skip_page = True
-                    break
+            if not _session_active:
+                print(f"[GDPR Art5b] No active session → redacting page {idx} (purpose limitation)")
+                skip_page = True
+
+            # Pre-check: if any data subject lacks consent, redact without logging
+            if not skip_page:
+                for uid in uids:
+                    if not _check_consent(uid, _current_session_purpose):
+                        print(f"[GDPR] {uid} has no consent → redacting page {idx} (no Use event logged)")
+                        skip_page = True
+                        break
             if not skip_page:
                 # Pre-check Art 9
                 with Session() as s:
@@ -1140,6 +1153,11 @@ class MyFS(Fuse):
         output = []
         rows = reader
 
+        # Pre-check Art 5b: no active session → redact all rows (purpose limitation)
+        session_blocked = not _session_active and bool(file_level_uids)
+        if session_blocked:
+            print(f"[GDPR Art5b] No active session → redacting CSV (purpose limitation)")
+
         # Pre-check Art 6: if any file-level uid has revoked consent, redact all rows
         all_consented = all(_check_consent(uid, _current_session_purpose) for uid in file_level_uids) if file_level_uids else True
 
@@ -1167,7 +1185,7 @@ class MyFS(Fuse):
                 output.append(row)
                 continue
 
-            if not all_consented or art9_blocked:
+            if session_blocked or not all_consented or art9_blocked:
                 output.append(["REDACTED"] * len(row))
                 continue
 
@@ -1405,6 +1423,12 @@ class MyFS(Fuse):
                 update_file_metadata(str(p.resolve()), "read")
                 return chunk
 
+            # Pre-check Art 5b: no active session → no purpose → block read
+            if not _session_active:
+                print(f"[GDPR Art5b] No active session → REDACTED (purpose limitation)")
+                red = b"REDACTED"
+                return red[offset: offset + size]
+
             # Pre-check: if any data subject lacks consent, return REDACTED without logging
             for uid in uids:
                 if not _check_consent(uid, _current_session_purpose):
@@ -1515,6 +1539,10 @@ class MyFS(Fuse):
         # temp → real file pattern (gedit .goutputstream-*, LibreOffice .tmp, etc.)
         if _is_temp_name(old) and not _is_temp_name(new):
             _, uids = _get_file_and_user(_upper(new))
+            # Art 5b: no active session → block final save (purpose limitation)
+            if uids and not _session_active:
+                print(f"[GDPR Art5b] Blocking final save for {new}: no active session (purpose limitation)")
+                raise OSError(EACCES, "GDPR policy: write requires an active session (Art 5b purpose limitation)")
             # Art 6: check regular consent for all data subjects
             all_consented = all(_check_consent(uid, _current_session_purpose) for uid in uids) if uids else True
             if not all_consented:
