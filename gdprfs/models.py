@@ -1,3 +1,4 @@
+import os
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Text, Table
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
@@ -76,6 +77,13 @@ Session = sessionmaker(bind=ENGINE)
 
 # Ensure all tables exist (safe to call repeatedly: only creates missing tables)
 Base.metadata.create_all(ENGINE)
+
+# Ensure DB is writable by all processes (root FUSE daemon + user Flask apps)
+_DB_PATH = "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs.db"
+try:
+    os.chmod(_DB_PATH, 0o666)
+except PermissionError:
+    pass  # non-root can't chmod root-owned file; root will fix it on next run
 
 # Migrate: add page_index/row_index columns if missing
 # (create_all only creates missing tables, not missing columns)

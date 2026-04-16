@@ -18,16 +18,14 @@ def split_txt(path):
     return [Chunk(0, text)]
 
 def split_csv(path):
-    """Splits a CSV file into chunks, one per row."""
+    """Splits a CSV file into chunks, one per row.
+    Treats every row as data (no header assumption) so the LLM sees all content."""
     chunks = []
     with open(path, encoding="utf-8", errors="ignore") as f:
-        reader = csv.DictReader(f)
+        reader = csv.reader(f)
         for i, row in enumerate(reader):
-            chunks.append(Chunk(i, " ".join(row.values()), metadata=row))
-        
-        print("HEADER:", reader.fieldnames)
-        for i, row in enumerate(reader):
-            print("ROW:", row)
+            metadata = {str(col): val for col, val in enumerate(row)}
+            chunks.append(Chunk(i, " ".join(row), metadata=metadata))
 
     return chunks
 
