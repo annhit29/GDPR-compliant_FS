@@ -171,6 +171,7 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
         s.query(PersonFileSpecialCategory).filter_by(file_id=file_obj.id).delete()
 
         for chunk in llm_results:
+            chunk_idx = chunk.get("chunk index")  # page index for PDFs, row index for CSVs
             persons = chunk["analysis"]["persons"]
             for person_info in persons:
                 per_person_cats = person_info.get("special_data_categories", [])
@@ -190,13 +191,18 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
                     else:
                         person = s.query(Person).filter(and_(Person.first_name == first, Person.last_name == last)).first()
                 if person:
+                    # Determine per-chunk index: page_index for PDFs, row_index for CSVs
+                    is_pdf = path_abs.lower().endswith(".pdf")
+                    is_csv = path_abs.lower().endswith(".csv")
                     for cat in per_person_cats:
                         s.add(PersonFileSpecialCategory(
                             person_id=person.id,
                             file_id=file_obj.id,
-                            special_category=cat
+                            special_category=cat,
+                            page_index=chunk_idx if is_pdf else None,
+                            row_index=chunk_idx if is_csv else None,
                         ))
-                    print(f"[LLM Art9] Person '{name}' (id={person.id}) → special categories: {per_person_cats}")
+                    print(f"[LLM Art9] Person '{name}' (id={person.id}) → special categories: {per_person_cats} (chunk {chunk_idx})")
 
         s.commit()
         # Verify what was actually committed
