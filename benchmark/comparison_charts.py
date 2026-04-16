@@ -2,11 +2,11 @@
 Generate comparison charts for the README.
 
 Charts produced:
-  1. overhead_decomposition.png — Stacked bars: Base FS vs Enforcer vs LLM for all articles with 3 modes
-  2. art16_side_by_side.png    — Art 16 wf1 (has write->LLM) vs wf2 (no write->no LLM), per-step
-  3. art5_6_per_step_log.png   — Art 5&6 per-step with log scale (baseline visible)
-  4. art16_wf1_per_step_log.png — Art 16 wf1 per-step with log scale
-  5-12. artX_combined.png      — Per-step + Total side-by-side for each workflow
+  1. overhead_decomposition.png: Stacked bars: Base FS vs Enforcer vs LLM for all articles with 3 modes
+  2. art16_side_by_side.png   : Art 16 wf1 (has write->LLM) vs wf2 (no write->no LLM), per-step
+  3. art5_6_per_step_log.png  : Art 5&6 per-step with log scale (baseline visible)
+  4. art16_wf1_per_step_log.png: Art 16 wf1 per-step with log scale
+  5-12. artX_combined.png     : Per-step + Total side-by-side for each workflow
 
 Usage (from instrlib/):
   python -m benchmark.comparison_charts

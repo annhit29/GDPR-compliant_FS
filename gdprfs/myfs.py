@@ -150,7 +150,7 @@ def replay_from_consent_db(logger):
         rows = res.json()
         print(f"[INIT] Replaying {len(rows)} consent states into enforcer...")
 
-        # Only replay consent/revoke events — request events (RequestAccess,
+        # Only replay consent/revoke events: request events (RequestAccess,
         # RequestErasure, RequestRectification) need extra fields (fid, fid_new)
         # not stored in CurrentEventState, so skip them.
         replayable = {"Consent", "Revoke", "SpecialConsent", "RevokeSpecialConsent"}
@@ -416,7 +416,12 @@ schema.add('StopSession', [str])
 
 schema.add('Consent', [str, str]) # for consent events
 schema.add('Revoke', [str, str]) # for revoke consent events
+
+# for art15
+schema.add('IsCategory', [str, str])
 schema.add('RequestAccess', [str]) # request all DS data events from the FS
+
+# for art17
 schema.add('RequestErasure', [str, str]) # request erasure of all DS data events in the FS
 
 # for art16
@@ -432,16 +437,13 @@ schema.add('SpecialConsent', [str, str, str]) # for special category data consen
 schema.add('RevokeSpecialConsent', [str, str, str]) # for revoking special category data consent (uid, purpose, spCat)
 schema.add('SpecialData', [str, str]) # for special category data (file_id, spCat)
 
-# for art13 and art15
-schema.add('IsCategory', [str, str])
-
 # for art30
 schema.add('Record', [str, str, str, str, str]) # for recording an event in the data subject's record
 
 # ========== HANDLERS ==========
 def delete_causation_handler(event_list):
     """Called by enforcer when it causes Delete(fid) (Art 17 erasure or Art 5 accuracy).
-    args is list[str], e.g. ['fhublet.txt'] — not list[list[str]]."""
+    args is list[str], e.g. ['fhublet.txt']: not list[list[str]]."""
     for event_json in event_list:
         args = event_json.get("args", [])
         fid = args[0] if args else ""

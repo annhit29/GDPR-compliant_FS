@@ -72,7 +72,7 @@ External Consent Platform (:5000)    Internal Purpose Platform (:8000)
 | Poller | Ingest Server | 7000 | `POST /ingest` | `gdprfs/myfs.py` | Forward consent and request events |
 | Internal Purpose Platform | Ingest Server | 7000 | `POST /ingest` | `gdprfs/myfs.py` | StartSession and StopSession |
 | DS Interface | Ingest Server | 7000 | `POST /sync_users` | `gdprfs/myfs.py` | Notify new DS registration |
-| DS Interface | Ingest Server | 7000 | `POST /upload_rectification` | `gdprfs/myfs.py` | Art 16 file staging |
+| DS Interface | Ingest Server | 7000 | `POST /upload_rectification` | `gdprfs/myfs.py` | Art 16 file rectification |
 | DS Interface | Ingest Server | 7000 | `GET /access_status/{uid}` | `gdprfs/myfs.py` | Art 15 status check |
 | DS Interface | Ingest Server | 7000 | `GET /access_download/{id}` | `gdprfs/myfs.py` | Art 15 ZIP download |
 | PDP | DS Interface | 5000 | `GET /api/consents/{uid}/{purpose}` | `external_consent_platform/api.py` | Check regular consent (Art 6) |

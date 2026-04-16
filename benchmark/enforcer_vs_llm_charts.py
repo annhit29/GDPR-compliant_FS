@@ -2,7 +2,7 @@
 Generate overhead decomposition charts from existing benchmark CSVs.
 
 Reads art5&6 and art16_wf1 results to show that the MFOTL enforcer
-adds negligible overhead — the LLM (GPT API) is the real bottleneck.
+adds negligible overhead: the LLM (GPT API) is the real bottleneck.
 
 Usage (from instrlib/):
   python -m benchmark.enforcer_vs_llm_charts

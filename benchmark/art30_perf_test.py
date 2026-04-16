@@ -537,7 +537,7 @@ class BenchmarkReporter:
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
         except ImportError:
-            print("  [WARN] matplotlib not installed — skipping charts")
+            print("  [WARN] matplotlib not installed: skipping charts")
             return
 
         modes = list(self.all_results.keys())
@@ -559,7 +559,7 @@ class BenchmarkReporter:
         ax.set_xticks(list(x))
         ax.set_xticklabels([s.removeprefix("t_") for s in steps_no_total], rotation=30)
         ax.set_ylabel("Time (s)")
-        ax.set_title("Art 30 Records of Processing — Per-Step Latency")
+        ax.set_title("Art 30 Records of Processing: Per-Step Latency")
         ax.legend()
         fig.tight_layout()
         fig.savefig(self.output_dir / "art30_per_step.png", dpi=150)
@@ -575,7 +575,7 @@ class BenchmarkReporter:
         colors = ["#4c78a8", "#f58518", "#e45756"][:len(modes)]
         ax.bar(modes, totals, color=colors)
         ax.set_ylabel("Time (s)")
-        ax.set_title("Art 30 Records of Processing — Total Latency")
+        ax.set_title("Art 30 Records of Processing: Total Latency")
         fig.tight_layout()
         fig.savefig(self.output_dir / "art30_total.png", dpi=150)
         plt.close(fig)
