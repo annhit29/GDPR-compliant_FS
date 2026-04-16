@@ -259,7 +259,7 @@ class BaselineWorkflow2:
         try:
             t0 = time.perf_counter()
 
-            # Step 1: RequestAccess — create manifest + ZIP locally
+            # Step 1: RequestAccess: create manifest + ZIP locally
             t1 = time.perf_counter()
             manifest = {"data_subject": DS_UID_2, "files": []}
             zip_path = os.path.join(tmp_dir, f"response_{DS_UID_2}.zip")
@@ -267,7 +267,7 @@ class BaselineWorkflow2:
                 zf.writestr("manifest.json", json.dumps(manifest, indent=2))
             t_request_access_with_response = time.perf_counter() - t1
 
-            # Step 2: Download ZIP — read from disk
+            # Step 2: Download ZIP: read from disk
             t2 = time.perf_counter()
             zip_bytes = Path(zip_path).read_bytes()
             verify_empty_zip(zip_bytes, DS_UID_2)
@@ -427,7 +427,7 @@ class BenchmarkReporter:
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
         except ImportError:
-            print("  [WARN] matplotlib not installed — skipping charts")
+            print("  [WARN] matplotlib not installed: skipping charts")
             return
 
         modes = list(self.all_results.keys())
@@ -450,7 +450,7 @@ class BenchmarkReporter:
         ax.set_xticklabels([s.removeprefix("t_") for s in steps_no_total], rotation=30)
         ax.set_ylabel("Time (s)")
         wf_title = WF_TITLES.get(self.workflow, self.workflow)
-        ax.set_title(f"Art 15 Right of Access ({wf_title}) — Per-Step Latency")
+        ax.set_title(f"Art 15 Right of Access ({wf_title}): Per-Step Latency")
         ax.legend()
         fig.tight_layout()
         fig.savefig(self.output_dir / f"art15_{self.workflow}_per_step.png", dpi=150)
@@ -466,7 +466,7 @@ class BenchmarkReporter:
         colors = ["#4c78a8", "#f58518", "#e45756"][:len(modes)]
         ax.bar(modes, totals, color=colors)
         ax.set_ylabel("Time (s)")
-        ax.set_title(f"Art 15 Right of Access ({wf_title}) — Total Latency")
+        ax.set_title(f"Art 15 Right of Access ({wf_title}): Total Latency")
         fig.tight_layout()
         fig.savefig(self.output_dir / f"art15_{self.workflow}_total.png", dpi=150)
         plt.close(fig)

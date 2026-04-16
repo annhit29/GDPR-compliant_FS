@@ -150,7 +150,7 @@ def replay_from_consent_db(logger):
         rows = res.json()
         print(f"[INIT] Replaying {len(rows)} consent states into enforcer...")
 
-        # Only replay consent/revoke events — request events (RequestAccess,
+        # Only replay consent/revoke events: request events (RequestAccess,
         # RequestErasure, RequestRectification) need extra fields (fid, fid_new)
         # not stored in CurrentEventState, so skip them.
         replayable = {"Consent", "Revoke", "SpecialConsent", "RevokeSpecialConsent"}
@@ -443,7 +443,7 @@ schema.add('Record', [str, str, str, str, str]) # for recording an event in the 
 # ========== HANDLERS ==========
 def delete_causation_handler(event_list):
     """Called by enforcer when it causes Delete(fid) (Art 17 erasure or Art 5 accuracy).
-    args is list[str], e.g. ['fhublet.txt'] — not list[list[str]]."""
+    args is list[str], e.g. ['fhublet.txt']: not list[list[str]]."""
     for event_json in event_list:
         args = event_json.get("args", [])
         fid = args[0] if args else ""

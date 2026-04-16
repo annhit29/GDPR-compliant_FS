@@ -426,7 +426,7 @@ class GDPRWorkflow:
             content = rf.read()
         t_use_revoked = time.perf_counter() - t13
         # The FUSE layer returns a redacted PDF (blank/template page), not literal b"REDACTED".
-        # Verify by extracting text — should contain "REDACTED" or be empty (blank page fallback).
+        # Verify by extracting text: should contain "REDACTED" or be empty (blank page fallback).
         revoked_text = subprocess.run(
             ["pdftotext", "-layout", str(renamed), "-"],
             capture_output=True, text=True
@@ -569,7 +569,7 @@ class BenchmarkReporter:
             matplotlib.use("Agg")
             import matplotlib.pyplot as plt
         except ImportError:
-            print("  [WARN] matplotlib not installed — skipping charts")
+            print("  [WARN] matplotlib not installed: skipping charts")
             return
 
         modes = list(self.all_results.keys())
@@ -591,7 +591,7 @@ class BenchmarkReporter:
         ax.set_xticks(list(x))
         ax.set_xticklabels([s.replace("t_", "") for s in steps_no_total], rotation=30)
         ax.set_ylabel("Time (s)")
-        ax.set_title("Collect Workflow — Per-Step Latency")
+        ax.set_title("Collect Workflow: Per-Step Latency")
         ax.legend()
         fig.tight_layout()
         fig.savefig(self.output_dir / "art5&6_per_step.png", dpi=150)
@@ -607,7 +607,7 @@ class BenchmarkReporter:
         colors = ["#4c78a8", "#f58518", "#e45756"][:len(modes)]
         ax.bar(modes, totals, color=colors)
         ax.set_ylabel("Time (s)")
-        ax.set_title("Collect Workflow — Total Latency")
+        ax.set_title("Collect Workflow: Total Latency")
         fig.tight_layout()
         fig.savefig(self.output_dir / "art5&6_total.png", dpi=150)
         plt.close(fig)

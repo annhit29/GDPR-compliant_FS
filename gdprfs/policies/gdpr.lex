@@ -571,7 +571,7 @@ observable predicate MakePublic #:= like github opensource, but with ds' persona
     ds : data_subject
     d : data
 
-# IsNecessaryForJudicialClaims := processing activity a is **strictly** required for legal proceedings, court cases, or judicial functions — either preparing for, conducting, or defending against legal claims.
+# IsNecessaryForJudicialClaims := processing activity a is **strictly** required for legal proceedings, court cases, or judicial functions: either preparing for, conducting, or defending against legal claims.
 observable predicate IsNecessaryForJudicialClaims
     """Processing activity {a} is necessary for the establishment, exercise or defence of legal claims
        or whenever courts are acting in their judicial capacity"""

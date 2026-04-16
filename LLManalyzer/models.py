@@ -12,7 +12,7 @@ class Category(str, Enum):
     IP_ADDRESS = "IP Address"
     OTHER = "Other"
 
-# GDPR Article 9 — special categories of personal data
+# GDPR Article 9: special categories of personal data
 class SpecialDataCategory(str, Enum):
     HEALTH = "health"
     RACIAL_ETHNIC = "racial_ethnic"

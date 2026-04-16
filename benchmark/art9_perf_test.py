@@ -474,7 +474,7 @@ class GDPRWorkflow:
         open(f1, "w").close()
         t_create = time.perf_counter() - t2
 
-        # Step 3: Read — no consent from jdoe or whsieh → REDACTED
+        # Step 3: Read: no consent from jdoe or whsieh → REDACTED
         t3 = time.perf_counter()
         with open(f1, "rb") as f:
             content = f.read()
@@ -489,7 +489,7 @@ class GDPRWorkflow:
         update_consent_db("jdoe", "marketing", "consented")
         t_consent_jdoe = time.perf_counter() - t4
 
-        # Step 5: Read — whsieh still no consent → REDACTED
+        # Step 5: Read: whsieh still no consent → REDACTED
         t5 = time.perf_counter()
         with open(f1, "rb") as f:
             content = f.read()
@@ -504,7 +504,7 @@ class GDPRWorkflow:
         update_consent_db("whsieh", "marketing", "consented")
         t_consent_whsieh = time.perf_counter() - t6
 
-        # Step 7: Read — both consented, file is empty → b""
+        # Step 7: Read: both consented, file is empty → b""
         t7 = time.perf_counter()
         with open(f1, "rb") as f:
             content = f.read()
@@ -518,7 +518,7 @@ class GDPRWorkflow:
             time.sleep(2)  # give LLM time to analyze and update DB
         t_write1 = time.perf_counter() - t8
 
-        # Step 10: Read — no SpecialConsent for genetic → REDACTED
+        # Step 10: Read: no SpecialConsent for genetic → REDACTED
         if self.with_llm:
             t10 = time.perf_counter()
             with open(f1, "rb") as f:
@@ -541,7 +541,7 @@ class GDPRWorkflow:
         update_special_consent_db("jdoe", "marketing", "genetic", "special_consented")
         t_spconsent_jdoe_genetic = time.perf_counter() - t11
 
-        # Step 12: Read — whsieh lacks genetic SpecialConsent → REDACTED
+        # Step 12: Read: whsieh lacks genetic SpecialConsent → REDACTED
         if self.with_llm:
             t12 = time.perf_counter()
             with open(f1, "rb") as f:
@@ -563,7 +563,7 @@ class GDPRWorkflow:
         update_special_consent_db("whsieh", "marketing", "genetic", "special_consented")
         t_spconsent_whsieh_genetic = time.perf_counter() - t13
 
-        # Step 14: Read — all SpecialConsent granted → real content
+        # Step 14: Read: all SpecialConsent granted → real content
         t14 = time.perf_counter()
         with open(f1, "rb") as f:
             content = f.read()
@@ -581,7 +581,7 @@ class GDPRWorkflow:
             time.sleep(2)
         t_write2 = time.perf_counter() - t15
 
-        # Step 17: Read — jdoe lacks health+biometric; whsieh lacks racial_ethnic → REDACTED
+        # Step 17: Read: jdoe lacks health+biometric; whsieh lacks racial_ethnic → REDACTED
         if self.with_llm:
             t17 = time.perf_counter()
             with open(f1, "rb") as f:
@@ -605,7 +605,7 @@ class GDPRWorkflow:
         update_special_consent_db("jdoe", "marketing", "health", "special_consented")
         t_spconsent_jdoe_bio_health = time.perf_counter() - t18
 
-        # Step 19: Read — whsieh lacks racial_ethnic → REDACTED
+        # Step 19: Read: whsieh lacks racial_ethnic → REDACTED
         if self.with_llm:
             t19 = time.perf_counter()
             with open(f1, "rb") as f:
@@ -627,7 +627,7 @@ class GDPRWorkflow:
         update_special_consent_db("whsieh", "marketing", "racial_ethnic", "special_consented")
         t_spconsent_whsieh_racial = time.perf_counter() - t20
 
-        # Step 21: Read — all spCats consented → real content
+        # Step 21: Read: all spCats consented → real content
         t21 = time.perf_counter()
         with open(f1, "rb") as f:
             content = f.read()
@@ -644,7 +644,7 @@ class GDPRWorkflow:
         os.rename(str(f1), str(f2))
         t_rename = time.perf_counter() - t22
 
-        # Step 23: Read — fhublet lacks consent + racial_ethnic spConsent → REDACTED
+        # Step 23: Read: fhublet lacks consent + racial_ethnic spConsent → REDACTED
         t23 = time.perf_counter()
         with open(f2, "rb") as f:
             content = f.read()
@@ -665,7 +665,7 @@ class GDPRWorkflow:
         update_special_consent_db("fhublet", "marketing", "racial_ethnic", "special_consented")
         t_spconsent_fhublet_racial = time.perf_counter() - t26
 
-        # Step 27: Read renamed file — Use+SpecialData logged
+        # Step 27: Read renamed file: Use+SpecialData logged
         t27 = time.perf_counter()
         with open(f2, "rb") as f:
             content = f.read()
@@ -679,7 +679,7 @@ class GDPRWorkflow:
             time.sleep(2)
         t_write3 = time.perf_counter() - t28
 
-        # Step 30: Read — all consented → real content
+        # Step 30: Read: all consented → real content
         t30 = time.perf_counter()
         with open(f2, "rb") as f:
             content = f.read()
@@ -703,7 +703,7 @@ class GDPRWorkflow:
         update_special_consent_db("whsieh", "marketing", "genetic", "special_revoked")
         t_revoke_sp_whsieh = time.perf_counter() - t33
 
-        # Step 34: Read — whsieh lacks genetic → REDACTED
+        # Step 34: Read: whsieh lacks genetic → REDACTED
         t34 = time.perf_counter()
         with open(f2, "rb") as f:
             content = f.read()
@@ -718,7 +718,7 @@ class GDPRWorkflow:
         update_special_consent_db("whsieh", "marketing", "genetic", "special_consented")
         t_reconsent_sp_whsieh = time.perf_counter() - t35
 
-        # Step 36: Read — all consented again → real content
+        # Step 36: Read: all consented again → real content
         t36 = time.perf_counter()
         with open(f2, "rb") as f:
             content = f.read()
