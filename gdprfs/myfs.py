@@ -416,7 +416,12 @@ schema.add('StopSession', [str])
 
 schema.add('Consent', [str, str]) # for consent events
 schema.add('Revoke', [str, str]) # for revoke consent events
+
+# for art15
+schema.add('IsCategory', [str, str])
 schema.add('RequestAccess', [str]) # request all DS data events from the FS
+
+# for art17
 schema.add('RequestErasure', [str, str]) # request erasure of all DS data events in the FS
 
 # for art16
@@ -431,9 +436,6 @@ schema.add('Rectify', [str, str]) # for rectification events
 schema.add('SpecialConsent', [str, str, str]) # for special category data consent (uid, purpose, spCat)
 schema.add('RevokeSpecialConsent', [str, str, str]) # for revoking special category data consent (uid, purpose, spCat)
 schema.add('SpecialData', [str, str]) # for special category data (file_id, spCat)
-
-# for art13 and art15
-schema.add('IsCategory', [str, str])
 
 # for art30
 schema.add('Record', [str, str, str, str, str]) # for recording an event in the data subject's record
