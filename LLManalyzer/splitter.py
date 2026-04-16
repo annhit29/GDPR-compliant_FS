@@ -74,12 +74,9 @@ def split_pdf(path):
 
 def split_file(path):
     ext = Path(path).suffix.lower()
-    # ext = Path(path).suffix.lower().rstrip("#~")
     if ext == ".txt":
         return split_txt(path)
-    # if ext == ".csv":
     if ext in [".csv", ".csv#", ".tmp"]:
-    # if ext in [".csv", ".csv#"]:
         return split_csv(path)
     if ext in [".xls", ".xlsx"]:
         return split_excel(path)
