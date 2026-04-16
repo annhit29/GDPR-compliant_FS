@@ -7,6 +7,7 @@ from gdprfs.models import File, Person, NameAlias, PersonFileSpecialCategory, Se
 from sqlalchemy import and_, func
 from gdprfs.merge_alerts import save_merge_alerts_for_ui
 from Levenshtein import distance  # if installed
+from gdprfs.db_utils import _manual_owner_for_path
 
 
 def _is_typo(a, b):
@@ -203,6 +204,50 @@ def update_file_people_from_llm(path_abs: str, llm_results: list):
         print(f"[LLM Art9] After commit, special_categories = '{file_obj.special_categories}'")
         print(f"[LLM] Updated file_people for {len(file_obj.people)} persons")
 
+def _update_special_categories_for_gdprowner(path_abs: str, llm_results: list, owner_uid: str):
+    """
+    For .gdprowner files: ownership is already locked to the declared owner.
+    Only extract special data categories from LLM results and assign them
+    all to that owner (since all data in the file belongs to them).
+    """
+    print(f"[LLM gdprowner] Updating special categories only for {path_abs} (owner={owner_uid})")
+
+    with Session() as s:
+        file_obj = s.query(File).filter(File.abs_path == path_abs).first()
+        if not file_obj:
+            print(f"[LLM gdprowner] File not in DB: skipping special categories")
+            return
+
+        owner = s.query(Person).filter_by(uid=owner_uid).first()
+        if not owner:
+            print(f"[LLM gdprowner] WARNING: Person uid='{owner_uid}' not found in DB")
+            return
+
+        # Extract all special data categories from LLM chunks
+        all_special_cats = set()
+        for chunk in llm_results:
+            cats = chunk["analysis"].get("special_data_categories", [])
+            all_special_cats.update(cats)
+
+        # Store file-level special categories
+        joined = ",".join(sorted(all_special_cats))
+        file_obj.special_categories = joined
+        if all_special_cats:
+            print(f"[LLM gdprowner Art9] Detected special categories for {path_abs}: {all_special_cats}")
+
+        # Store per-person special categories: all assigned to the gdprowner owner
+        s.query(PersonFileSpecialCategory).filter_by(file_id=file_obj.id).delete()
+        for cat in all_special_cats:
+            s.add(PersonFileSpecialCategory(
+                person_id=owner.id,
+                file_id=file_obj.id,
+                special_category=cat
+            ))
+
+        s.commit()
+        print(f"[LLM gdprowner] Done. Owner '{owner_uid}' → special categories: {sorted(all_special_cats) or 'none'}")
+
+
 def run_llm_analysis_and_update_db(path_abs: str):
     """
     Call the LLM analyzer for the given absolute file path,
@@ -214,6 +259,9 @@ def run_llm_analysis_and_update_db(path_abs: str):
     if os.path.basename(path_abs).startswith(".goutputstream-"):
         print(f"[LLM] Skipping temp file for analysis: {path_abs}")
         return
+
+    # Check if file has .gdprowner override: tier 1 owns the ownership mapping
+    gdprowner_uid = _manual_owner_for_path(Path(path_abs))
 
     data = Path(path_abs).read_bytes()
     new_hash = sha256(data).hexdigest()
@@ -248,8 +296,13 @@ def run_llm_analysis_and_update_db(path_abs: str):
         print(f"[LLM] ERROR: analyzer failed: {e}")
         return
 
-    # 3. Update DB mapping (critical!)
-    update_file_people_from_llm(path_abs, results)
+    # 3. Update DB mapping
+    if gdprowner_uid:
+        # .gdprowner file: ownership is locked to declared owner, only update special categories
+        _update_special_categories_for_gdprowner(path_abs, results, gdprowner_uid)
+    else:
+        # Normal file: full LLM-based people + special categories update
+        update_file_people_from_llm(path_abs, results)
 
     # 4. Store new hash in DB
     with Session() as s:

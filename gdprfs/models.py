@@ -71,7 +71,7 @@ class NameAlias(Base):
 ENGINE = create_engine("sqlite:////home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs.db")
 Session = sessionmaker(bind=ENGINE)
 
-# Ensure all tables exist (safe to call repeatedly — only creates missing tables)
+# Ensure all tables exist (safe to call repeatedly: only creates missing tables)
 Base.metadata.create_all(ENGINE)
 
 # Always print the DB path on import (once per process)

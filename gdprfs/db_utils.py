@@ -9,7 +9,7 @@ from odf.text import P
 import pandas as pd
 from fnmatch import fnmatch
 
-GDPROWNER_PATH = Path("/var/lib/gdprfs/.gdprowner")
+GDPROWNER_PATH = Path("/var/lib/gdprfs/.gdprowner") # it's a config file, so root-only `chmod 600`, not user data. So it shouldn't be in /tmp/mnt (the user-visible mount).
 
 def load_gdprowner():
     """
@@ -256,7 +256,14 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
         with Session() as session:
             print(f"[GDPROWNER] Manual override by internal person, in path {p}: assigning {file_id} → {owner_uid} (skips folder/filename/content)")
 
+            # Try to find existing entry: by new name, or by old name (rename case)
             f = session.query(File).filter_by(file_id=file_id).first()
+            if not f and context == "rename" and old_name:
+                f = session.query(File).filter_by(file_id=old_name).first()
+                if f:
+                    print(f"[GDPROWNER] Detected rename {old_name} → {file_id}")
+                    f.file_id = file_id
+                    f.abs_path = str(p.resolve())
 
             # ensure File exists
             if not f:
@@ -276,9 +283,15 @@ def update_file_mapping_for_upper(abs_upper_path: str, context: str = "rescan", 
                 session.add(f)
 
             # assign manual owner
+            session.flush()  # ensure f has a primary key before relationship check
             owner = session.query(Person).filter_by(uid=owner_uid).first()
-            if owner and f not in owner.files:
+            if not owner:
+                print(f"[GDPROWNER] WARNING: Person uid='{owner_uid}' not found in DB: cannot assign ownership")
+            elif f not in owner.files:
                 owner.files.append(f)
+                print(f"[GDPROWNER] Linked File(id={f.id}) to Person(uid='{owner_uid}') in person_file_map")
+            else:
+                print(f"[GDPROWNER] File already linked to {owner_uid}, skipping")
 
             session.commit()
             print(f"[GDPROWNER] DONE: {file_id} is now owned by Person(uid='{owner_uid}') (manual override by internal person in path {p})")
