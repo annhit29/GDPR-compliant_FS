@@ -489,7 +489,7 @@ External Consent Platform (:5000)    Internal Purpose Platform (:8000)
 <td>1</td>
 <td><strong><code>.gdprowner</code></strong></td>
 <td>Internal user declares ownership rules</td>
-<td><code>jdoe: jdoe/**</code> → all files under <code>jdoe/</code> belong to jdoe</td>
+<td><code>jdoe: secretproject/**</code> → all files under <code>secretproject/</code> belong to jdoe</td>
 </tr>
 <tr>
 <td>2</td>
@@ -512,10 +512,35 @@ External Consent Platform (:5000)    Internal Purpose Platform (:8000)
 </tbody>
 </table>
 <ul>
-<li><code>.gdprowner</code> is located at <code>/var/lib/gdprfs/.gdprowner</code>, one rule per line (e.g. <code>jdoe: jdoe/**</code>).</li>
+<li><code>.gdprowner</code> is located at <code>/var/lib/gdprfs/.gdprowner</code>, one rule per line (e.g. <code>jdoe: secretproject/**</code>).</li>
 <li>Folder name activates automatically when a folder name matches a known data subject.</li>
 </ul>
-<p><strong>Key function:</strong> <code>update_file_mapping_for_upper()</code> in <code>db_utils.py</code></p>
+<h4 id="gdprownerstep-by-step-test">.gdprowner<code> step-by-step test</code> </h4>
+<p>The key idea: use a folder name that <strong>doesn't</strong> match any data subject, so only the <code>.gdprowner</code> rule can link it.</p>
+<p><strong>1. Add a rule to <code>.gdprowner</code></strong></p>
+<pre data-role="codeBlock" data-info="bash" class="language-bash bash"><code><span class="token builtin class-name">echo</span> <span class="token string">"jdoe: secretproject/**"</span> <span class="token operator">|</span> <span class="token function">sudo</span> <span class="token function">tee</span> <span class="token parameter variable">-a</span> /var/lib/gdprfs/.gdprowner
+</code></pre><pre data-role="codeBlock" data-info="bash" class="language-bash bash"><code><span class="token function">sudo</span> <span class="token function">cat</span> /var/lib/gdprfs/.gdprowner <span class="token comment">#verify the .gdprowner content</span>
+</code></pre><p>should display</p>
+<pre data-role="codeBlock" data-info="bash" class="language-bash bash"><code><span class="token comment"># GDPR manual PII declaration patterns</span>
+jdoe: secretproject/**
+</code></pre><p>This says: any file under <code>secretproject/</code> belongs to <code>jdoe</code>, but "secretproject" doesn't match any Person name, so tiers 2-4 won't trigger.</p>
+<p><strong>2. Restart the FUSE daemon</strong> (rules are loaded once at startup)</p>
+<pre data-role="codeBlock" data-info="bash" class="language-bash bash"><code>./reset_myfs_sudo.sh
+<span class="token function">sudo</span> <span class="token parameter variable">-E</span> <span class="token assign-left variable">PYTHONPATH</span><span class="token operator">=</span>. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt <span class="token parameter variable">-f</span> <span class="token parameter variable">-o</span> allow_other
+</code></pre><p>Look for this in the startup logs:</p>
+<pre data-role="codeBlock" data-info="bash" class="language-bash bash"><code><span class="token punctuation">[</span>INIT<span class="token punctuation">]</span> Loaded gdprowner rules: <span class="token punctuation">[</span><span class="token punctuation">(</span><span class="token string">'jdoe'</span>, <span class="token string">'secretproject/**'</span><span class="token punctuation">)</span><span class="token punctuation">]</span>
+</code></pre><p><strong>3. Create a test file</strong></p>
+<ol>
+<li>Create the <code>/secretproject</code> folder in <code>/tmp/mnt</code></li>
+<li>Create a file named <code>notes.txt</code> in the <code>/secretproject</code> folder.</li>
+<li>Write the file content "some random data", then save the file.</li>
+</ol>
+<p>In the FUSE logs you should see:</p>
+<pre data-role="codeBlock" data-info="bash" class="language-bash bash"><code><span class="token punctuation">[</span>GDPROWNER<span class="token punctuation">]</span> Manual override by internal person, <span class="token keyword keyword-in">in</span> path <span class="token punctuation">..</span>.: assigning notes.txt → jdoe <span class="token punctuation">(</span>skips folder/filename/content<span class="token punctuation">)</span>
+</code></pre><p><strong>4. Verify enforcement works</strong><br>
+Inside an active session:</p>
+<p>If <code>jdoe</code> has active consent: Then if the internal user opens <code>/tmp/mnt/secretproject/notes.txt</code>, then the "some random data" content is shown.</p>
+<p>Then revoke <code>jdoe</code>'s consent (via the external consent platform at <code>:5000</code>), and: if the internal user reopens <code>/tmp/mnt/secretproject/notes.txt</code>, then <code>"REDACTED"</code> is shown instead of the real file content.</p>
 <h3 id="63-consent-model">6.3 Consent Model </h3>
 <p><strong>Regular consent (Art 6):</strong> per data subject, per purpose (marketing, service, analytics).</p>
 <p><strong>Special consent (Art 9):</strong> per data subject, per special data category (health, genetic, religious, racial_ethnic, political, trade_union, biometric, sex_life).</p>

@@ -291,15 +291,65 @@ PII ownership is determined in strict priority order: **stops at first match**:
 
 | Priority | Tier | Source | Example |
 |----------|------|--------|---------|
-| 1 | **`.gdprowner`** | Internal user declares ownership rules | `jdoe: jdoe/**` → all files under `jdoe/` belong to jdoe |
+| 1 | **`.gdprowner`** | Internal user declares ownership rules | `jdoe: secretproject/**` → all files under `secretproject/` belong to jdoe |
 | 2 | **Folder name** | Folder name matches a known Person | Folder `fhublet/` → matched to François Hublet (fhublet) |
 | 3 | **Filename** | Filename contains a Person's name | File `jdoe_report.txt` → matched to John Doe |
 | 4 | **Content** (fallback) | File content scanned for names | Text contains "John Doe" → linked to jdoe |
 
-- `.gdprowner` is located at `/var/lib/gdprfs/.gdprowner`, one rule per line (e.g. `jdoe: jdoe/**`).
+- `.gdprowner` is located at `/var/lib/gdprfs/.gdprowner`, one rule per line (e.g. `jdoe: secretproject/**`).
 - Folder name activates automatically when a folder name matches a known data subject.
 
-**Key function:** `update_file_mapping_for_upper()` in `db_utils.py`
+#### \.gdprowner` step-by-step test`
+The key idea: use a folder name that **doesn't** match any data subject, so only the `.gdprowner` rule can link it.
+
+**1. Add a rule to `.gdprowner`**
+
+```bash
+echo "jdoe: secretproject/**" | sudo tee -a /var/lib/gdprfs/.gdprowner
+```
+
+```bash
+sudo cat /var/lib/gdprfs/.gdprowner #verify the .gdprowner content
+```
+should display
+```bash
+# GDPR manual PII declaration patterns
+jdoe: secretproject/**
+```
+This says: any file under `secretproject/` belongs to `jdoe`, but "secretproject" doesn't match any Person name, so tiers 2-4 won't trigger.
+
+
+**2. Restart the FUSE daemon** (rules are loaded once at startup)
+
+```bash
+./reset_myfs_sudo.sh
+sudo -E PYTHONPATH=. /home/ann20010929/gdprfs-venv/bin/python3 gdprfs/myfs.py /tmp/mnt -f -o allow_other
+```
+
+Look for this in the startup logs:
+
+```bash
+[INIT] Loaded gdprowner rules: [('jdoe', 'secretproject/**')]
+```
+
+**3. Create a test file**
+1. Create the `/secretproject` folder in `/tmp/mnt`
+2. Create a file named `notes.txt` in the `/secretproject` folder.
+3. Write the file content "some random data", then save the file.
+
+
+In the FUSE logs you should see:
+```bash
+[GDPROWNER] Manual override by internal person, in path ...: assigning notes.txt → jdoe (skips folder/filename/content)
+```
+
+**4. Verify enforcement works**
+Inside an active session:
+
+If `jdoe` has active consent: Then if the internal user opens `/tmp/mnt/secretproject/notes.txt`, then the "some random data" content is shown.
+
+Then revoke `jdoe`'s consent (via the external consent platform at `:5000`), and: if the internal user reopens `/tmp/mnt/secretproject/notes.txt`, then `"REDACTED"` is shown instead of the real file content.
+
 
 ### 6.3 Consent Model
 
