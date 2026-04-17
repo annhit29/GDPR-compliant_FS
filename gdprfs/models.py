@@ -1,3 +1,4 @@
+import os
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Text, Table
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
@@ -38,12 +39,15 @@ class Person(Base):
 
 class PersonFileSpecialCategory(Base):
     """Per-person-per-file Art 9 special data categories.
-    Tracks which special categories apply to which person in which file."""
+    Tracks which special categories apply to which person in which file.
+    For PDFs, page_index tracks which page the category was detected on."""
     __tablename__ = "person_file_special_category"
     id = Column(Integer, primary_key=True)
     person_id = Column(Integer, ForeignKey("person.id"), nullable=False)
     file_id = Column(Integer, ForeignKey("file.id"), nullable=False)
     special_category = Column(String(32), nullable=False)  # e.g. "health", "genetic"
+    page_index = Column(Integer, nullable=True)  # PDF only: which page (NULL = file-level)
+    row_index = Column(Integer, nullable=True)   # CSV only: which row (NULL = file-level)
 
     person = relationship("Person")
     file = relationship("File")
@@ -73,6 +77,27 @@ Session = sessionmaker(bind=ENGINE)
 
 # Ensure all tables exist (safe to call repeatedly: only creates missing tables)
 Base.metadata.create_all(ENGINE)
+
+# Ensure DB is writable by all processes (root FUSE daemon + user Flask apps)
+_DB_PATH = "/home/ann20010929/MA3/Building_a_GDPR-compliant_file_system/instrlib/gdprfs.db"
+try:
+    os.chmod(_DB_PATH, 0o666)
+except PermissionError:
+    pass  # non-root can't chmod root-owned file; root will fix it on next run
+
+# Migrate: add page_index/row_index columns if missing
+# (create_all only creates missing tables, not missing columns)
+try:
+    with ENGINE.connect() as _conn:
+        from sqlalchemy import text, inspect as _sa_inspect
+        _cols = [c["name"] for c in _sa_inspect(ENGINE).get_columns("person_file_special_category")]
+        for _col in ("page_index", "row_index"):
+            if _col not in _cols:
+                _conn.execute(text(f"ALTER TABLE person_file_special_category ADD COLUMN {_col} INTEGER"))
+                _conn.commit()
+                print(f"[GDPRFS] Migrated: added {_col} to person_file_special_category")
+except Exception as _e:
+    print(f"[GDPRFS] Migration check: {_e}")
 
 # Always print the DB path on import (once per process)
 print(f"[GDPRFS] Using GDPRFS database at: {ENGINE.url}")

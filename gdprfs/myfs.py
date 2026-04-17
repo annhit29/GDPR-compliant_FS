@@ -254,10 +254,12 @@ def _person_effective_uid(person: Person) -> str:
     return (first[:1] + last) if (first or last) else "anonymous"
 
 
-def _special_categories_by_uid_for_file(abs_path):
+def _special_categories_by_uid_for_file(abs_path, page_index=None, row_index=None):
     """
-    Return a dict: uid -> set(categories) for this file,
-    using PersonFileSpecialCategory instead of File.special_categories.
+    Return a dict: uid -> set(categories) for this file.
+    If page_index is given (PDF), only return categories for that page.
+    If row_index is given (CSV), only return categories for that row.
+    If neither is given, return all categories (file-level, for TXT).
     """
     out = {}
 
@@ -266,14 +268,18 @@ def _special_categories_by_uid_for_file(abs_path):
         if not f:
             return out
 
-        rows = (
+        query = (
             s.query(PersonFileSpecialCategory, Person)
             .join(Person, Person.id == PersonFileSpecialCategory.person_id)
             .filter(PersonFileSpecialCategory.file_id == f.id)
-            .all()
         )
 
-        for pfsc, person in rows:
+        if page_index is not None:
+            query = query.filter(PersonFileSpecialCategory.page_index == page_index)
+        elif row_index is not None:
+            query = query.filter(PersonFileSpecialCategory.row_index == row_index)
+
+        for pfsc, person in query.all():
             uid = _person_effective_uid(person)
             out.setdefault(uid, set()).add(pfsc.special_category)
 
@@ -357,7 +363,7 @@ def events_for_read(path):
 # Cleared in open() so each new file open gets a fresh log.
 _special_data_logged = set()
 
-def _special_data_events(fid, abs_path, uids=None):
+def _special_data_events(fid, abs_path, uids=None, page_index=None, row_index=None):
     """
     Return SpecialData(fid, cat) events for categories that actually apply
     to at least one linked data subject in this file/page and for which that
@@ -366,7 +372,7 @@ def _special_data_events(fid, abs_path, uids=None):
     This logs that special category data was accessed with proper consent,
     for audit and compliance purposes.
     Deduplicates: each (fid, cat) pair is only logged once per open() cycle."""
-    cats_by_uid = _special_categories_by_uid_for_file(abs_path)
+    cats_by_uid = _special_categories_by_uid_for_file(abs_path, page_index=page_index, row_index=row_index)
     if not cats_by_uid:
         return []
 
@@ -1088,19 +1094,16 @@ class MyFS(Fuse):
                         skip_page = True
                         break
             if not skip_page:
-                # Pre-check Art 9
-                with Session() as s:
-                    f_obj = s.query(File).filter(File.abs_path == str(Path(abspath).resolve())).first()
-                    if f_obj and f_obj.special_categories:
-                        cats = [c.strip() for c in f_obj.special_categories.split(",") if c.strip()]
-                        for cat in cats:
-                            for uid in uids:
-                                if not _check_special_consent(uid, cat):
-                                    print(f"[GDPR Art9] {uid} lacks special consent for '{cat}' → redacting page {idx}")
-                                    skip_page = True
-                                    break
-                            if skip_page:
-                                break
+                # Pre-check Art 9: use per-page categories (not file-level)
+                page_cats_by_uid = _special_categories_by_uid_for_file(abspath, page_index=idx)
+                for uid in uids:
+                    for cat in page_cats_by_uid.get(uid, set()):
+                        if not _check_special_consent(uid, cat):
+                            print(f"[GDPR Art9] {uid} lacks special consent for '{cat}' → redacting page {idx}")
+                            skip_page = True
+                            break
+                    if skip_page:
+                        break
 
             if skip_page:
                 red_page = self._make_redacted_page()
@@ -1119,7 +1122,7 @@ class MyFS(Fuse):
                 writer.add_page(red_reader.pages[0])
             else:
                 writer.add_page(page)
-                special_evts = _special_data_events(page_fid, abspath, uids)
+                special_evts = _special_data_events(page_fid, abspath, uids, page_index=idx)
                 if special_evts:
                     logger.log(special_evts, threading.Event(), False)
                     _emit_art30_records("Use")  # Art 30 workaround
@@ -1393,7 +1396,6 @@ class MyFS(Fuse):
     
         # =========== Case1: pdf with page-based Use event ===========
         if str(p).lower().endswith(".pdf"):
-            print("[PDF] Page-based enforcement for PDF read")
 
             redacted_bytes = self._get_or_build_redacted_pdf(path)
 
