@@ -299,7 +299,7 @@ PII ownership is determined in strict priority order: **stops at first match**:
 - `.gdprowner` is located at `/var/lib/gdprfs/.gdprowner`, one rule per line (e.g. `jdoe: secretproject/**`).
 - Folder name activates automatically when a folder name matches a known data subject.
 
-#### \.gdprowner` step-by-step test`
+#### `\.gdprowner` step-by-step test
 The key idea: use a folder name that **doesn't** match any data subject, so only the `.gdprowner` rule can link it.
 
 **1. Add a rule to `.gdprowner`**

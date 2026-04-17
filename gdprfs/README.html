@@ -488,7 +488,7 @@ External Consent Platform (:5000)    Internal Purpose Platform (:8000)
 <tr>
 <td>1</td>
 <td><strong><code>.gdprowner</code></strong></td>
-<td>Internal user declares ownership rules</td>
+<td>Root-only config declaring ownership rules (managed via <code>sudo</code>)</td>
 <td><code>jdoe: secretproject/**</code> → all files under <code>secretproject/</code> belong to jdoe</td>
 </tr>
 <tr>
@@ -515,7 +515,7 @@ External Consent Platform (:5000)    Internal Purpose Platform (:8000)
 <li><code>.gdprowner</code> is located at <code>/var/lib/gdprfs/.gdprowner</code>, one rule per line (e.g. <code>jdoe: secretproject/**</code>).</li>
 <li>Folder name activates automatically when a folder name matches a known data subject.</li>
 </ul>
-<h4 id="gdprownerstep-by-step-test">.gdprowner<code> step-by-step test</code> </h4>
+<h4 id="gdprowner-step-by-step-test"><code>\.gdprowner</code> step-by-step test </h4>
 <p>The key idea: use a folder name that <strong>doesn't</strong> match any data subject, so only the <code>.gdprowner</code> rule can link it.</p>
 <p><strong>1. Add a rule to <code>.gdprowner</code></strong></p>
 <pre data-role="codeBlock" data-info="bash" class="language-bash bash"><code><span class="token builtin class-name">echo</span> <span class="token string">"jdoe: secretproject/**"</span> <span class="token operator">|</span> <span class="token function">sudo</span> <span class="token function">tee</span> <span class="token parameter variable">-a</span> /var/lib/gdprfs/.gdprowner
