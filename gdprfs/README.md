@@ -291,7 +291,7 @@ PII ownership is determined in strict priority order: **stops at first match**:
 
 | Priority | Tier | Source | Example |
 |----------|------|--------|---------|
-| 1 | **`.gdprowner`** | Internal user declares ownership rules | `jdoe: secretproject/**` → all files under `secretproject/` belong to jdoe |
+| 1 | **`.gdprowner`** | Root-only config declaring ownership rules (managed via `sudo`) | `jdoe: secretproject/**` → all files under `secretproject/` belong to jdoe |
 | 2 | **Folder name** | Folder name matches a known Person | Folder `fhublet/` → matched to François Hublet (fhublet) |
 | 3 | **Filename** | Filename contains a Person's name | File `jdoe_report.txt` → matched to John Doe |
 | 4 | **Content** (fallback) | File content scanned for names | Text contains "John Doe" → linked to jdoe |
