@@ -1207,7 +1207,7 @@ class MyFS(Fuse):
                 output.append(["REDACTED"] * len(row))
             else:
                 output.append(row)
-                special_evts = _special_data_events(row_fid, abspath, file_level_uids)
+                special_evts = _special_data_events(row_fid, abspath, file_level_uids, row_index=idx)
                 if special_evts:
                     logger.log(special_evts, threading.Event(), False)
                     _emit_art30_records("Use")  # Art 30 workaround
