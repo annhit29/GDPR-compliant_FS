@@ -202,6 +202,14 @@ def withdraw_and_erase():
     erasure.created_at = base_time + timedelta(microseconds=idx)
     db.session.add(erasure)
 
+    # Update CurrentEventState for the erasure request
+    s = CurrentEventState.query.filter_by(uid=uid, purpose="", category="request").one_or_none()
+    if s:
+        s.status = "erasure_requested"
+        s.updated_at = base_time + timedelta(microseconds=idx)
+    else:
+        db.session.add(CurrentEventState(uid=uid, purpose="", category="request", status="erasure_requested"))
+
     db.session.commit()
 
     flash(f"Withdrew {len(active_consents)} consent(s) and {len(active_special)} special consent(s). "
