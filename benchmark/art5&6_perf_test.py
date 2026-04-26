@@ -1,5 +1,5 @@
 """
-Benchmark: Collect Workflow Performance (Art 5)
+Benchmark: Collect Workflow Performance (Art 5&6)
 """
 
 import argparse
