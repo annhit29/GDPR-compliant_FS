@@ -31,6 +31,7 @@ from errno import ENOENT
 import zipfile
 import time as _time
 import base64, uuid as _uuid
+from sqlalchemy import or_, and_
 
 PDF_CACHE = {}
 CSV_CACHE = {}  # key: absolute Path → {"enforced_bytes": bytes, "mtime": float}
@@ -257,9 +258,11 @@ def _person_effective_uid(person: Person) -> str:
 def _special_categories_by_uid_for_file(abs_path, page_index=None, row_index=None):
     """
     Return a dict: uid -> set(categories) for this file.
-    If page_index is given (PDF), only return categories for that page.
-    If row_index is given (CSV), only return categories for that row.
-    If neither is given, return all categories (file-level, for TXT).
+    If page_index is given (PDF), return categories for that page PLUS any
+    file-level entries (page_index=None AND row_index=None), since a
+    file-level category applies to every page (e.g., .gdprowner override).
+    If row_index is given (CSV), return categories for that row PLUS file-level.
+    If neither is given, return all categories (used by TXT).
     """
     out = {}
 
@@ -274,10 +277,20 @@ def _special_categories_by_uid_for_file(abs_path, page_index=None, row_index=Non
             .filter(PersonFileSpecialCategory.file_id == f.id)
         )
 
+        file_level = and_(
+            PersonFileSpecialCategory.page_index.is_(None),
+            PersonFileSpecialCategory.row_index.is_(None),
+        )
         if page_index is not None:
-            query = query.filter(PersonFileSpecialCategory.page_index == page_index)
+            query = query.filter(or_(
+                PersonFileSpecialCategory.page_index == page_index,
+                file_level,
+            ))
         elif row_index is not None:
-            query = query.filter(PersonFileSpecialCategory.row_index == row_index)
+            query = query.filter(or_(
+                PersonFileSpecialCategory.row_index == row_index,
+                file_level,
+            ))
 
         for pfsc, person in query.all():
             uid = _person_effective_uid(person)
