@@ -1072,8 +1072,10 @@ class MyFS(Fuse):
         # 1) Load original PDF
         reader = PdfReader(str(abspath))
 
-        # 2) Figure out base fid + uids for this file
-        fid_base, _ = _get_file_and_user(abspath)
+        # 2) Figure out base fid + file-level uids for this file
+        # File-level uids (e.g. from a .gdprowner override) must apply to every page
+        # even when the page text does not mention the owner's name.
+        fid_base, file_level_uids = _get_file_and_user(abspath)
         if not fid_base:
             fid_base = os.path.basename(abspath)
 
@@ -1083,8 +1085,11 @@ class MyFS(Fuse):
         for idx, page in enumerate(reader.pages):
             page_fid = f"{fid_base}/page-{idx}"
             page_text = page.extract_text() or ""
-            uids = _uids_from_page_text(page_text)
+            page_uids = _uids_from_page_text(page_text)
 
+            # Merge file-level uids with page-text uids: the file-level mapping
+            # (gdprowner override or DB) gates every page regardless of content.
+            uids = list(set(file_level_uids) | set(page_uids))
 
             if not uids:
                 # page has no personal data → no Use event, no suppression
