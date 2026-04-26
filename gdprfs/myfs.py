@@ -840,7 +840,7 @@ def start_ingest_server(logger):
                     if not content_b64 or not filename:
                         self.send_error(400, "missing content_b64 or filename")
                         return
-                    fid_new = f"{_uuid.uuid4().hex}_{filename}"
+                    fid_new = f"{_uuid.uuid4().hex}_{filename}" #the prefix ensures filename prevents collisions in recttify_staging/ folder
                     staging_path = UPPER_DIR / "_rectify_staging" / fid_new
                     staging_path.write_bytes(base64.b64decode(content_b64))
                     self.send_response(200)
