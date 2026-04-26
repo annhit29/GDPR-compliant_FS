@@ -1180,22 +1180,6 @@ class MyFS(Fuse):
         # Pre-check Art 6: if any file-level uid has revoked consent, redact all rows
         all_consented = all(_check_consent(uid, _current_session_purpose) for uid in file_level_uids) if file_level_uids else True
 
-        # Pre-check Art 9: if file has special categories and any uid lacks special consent
-        art9_blocked = False
-        if all_consented and file_level_uids:
-            with Session() as s:
-                f_obj = s.query(File).filter(File.abs_path == str(abspath.resolve())).first()
-                if f_obj and f_obj.special_categories:
-                    cats = [c.strip() for c in f_obj.special_categories.split(",") if c.strip()]
-                    for cat in cats:
-                        for uid in file_level_uids:
-                            if not _check_special_consent(uid, cat):
-                                print(f"[GDPR Art9] {uid} lacks special consent for '{cat}' → redacting CSV")
-                                art9_blocked = True
-                                break
-                        if art9_blocked:
-                            break
-
         # Skip per-row Use events if a save is in progress
         save_in_progress = os.path.dirname(path) in _save_in_progress_dirs
 
@@ -1204,7 +1188,24 @@ class MyFS(Fuse):
                 output.append(row)
                 continue
 
-            if session_blocked or not all_consented or art9_blocked:
+            # Art 5b / Art 6: file-level (no session, or no consent for the purpose)
+            if session_blocked or not all_consented:
+                output.append(["REDACTED"] * len(row))
+                continue
+
+            # Art 9: row-level: only redact this row if its special categories
+            # lack consent for any file-level uid
+            row_cats_by_uid = _special_categories_by_uid_for_file(abspath, row_index=idx)
+            row_art9_blocked = False
+            for uid in file_level_uids:
+                for cat in row_cats_by_uid.get(uid, set()):
+                    if not _check_special_consent(uid, cat):
+                        print(f"[GDPR Art9] Row {idx}: {uid} lacks special consent for '{cat}' → redacting row")
+                        row_art9_blocked = True
+                        break
+                if row_art9_blocked:
+                    break
+            if row_art9_blocked:
                 output.append(["REDACTED"] * len(row))
                 continue
 
