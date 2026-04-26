@@ -399,6 +399,58 @@ def _special_data_events(fid, abs_path, uids=None, page_index=None, row_index=No
     print(f"[GDPR Art9] Co-emitting {len(evts)} SpecialData events for {fid} (consented categories: {consented_cats})")
     return evts
 
+def _csv_merge_protected_rows(target_path: Path, new_bytes: bytes, file_level_uids):
+    """For a CSV being written, enforce row-level Art 9 protection.
+
+    For each row whose stored special categories lack consent ("protected"):
+      - If the user's row matches the redacted view (["REDACTED"] * n), the
+        user did not modify it — silently keep the original content.
+      - If the user's row matches the original, allow as-is.
+      - Otherwise the user attempted to overwrite redacted content → raise
+        EACCES so the editor surfaces the failure to save.
+
+    Visible (non-protected) rows accept the user's edits unchanged.
+    """
+    if not target_path.exists() or not file_level_uids:
+        return new_bytes
+
+    with open(target_path, "r", newline="", encoding="utf-8", errors="ignore") as f:
+        original_rows = list(csv.reader(f))
+
+    new_text = new_bytes.decode("utf-8", errors="ignore")
+    new_rows = list(csv.reader(StringIO(new_text)))
+
+    merged = list(new_rows)
+
+    for idx, original in enumerate(original_rows):
+        row_cats_by_uid = _special_categories_by_uid_for_file(target_path, row_index=idx)
+        protected = any(
+            not _check_special_consent(uid, cat)
+            for uid in file_level_uids
+            for cat in row_cats_by_uid.get(uid, set())
+        )
+        if not protected:
+            continue
+
+        if idx >= len(new_rows):
+            print(f"[GDPR Art9] Row {idx} protected: missing in write → rejecting save")
+            raise OSError(EACCES, "GDPR Art 9: cannot remove redacted row")
+
+        new_row = new_rows[idx]
+        redacted_view = ["REDACTED"] * len(original)
+        if new_row == original:
+            continue
+        if new_row == redacted_view:
+            merged[idx] = original
+            continue
+        print(f"[GDPR Art9] Row {idx} protected: attempt to overwrite REDACTED content → rejecting save")
+        raise OSError(EACCES, "GDPR Art 9: cannot overwrite redacted row content")
+
+    buf = StringIO()
+    writer = csv.writer(buf)
+    writer.writerows(merged)
+    return buf.getvalue().encode("utf-8")
+
 def _emit_art30_records(activity):
     """Art 30: manually cause Record events (enforcer causation bug workaround).
     Called after SpecialData events are logged, since special data overrides the SME exemption."""
@@ -918,6 +970,7 @@ class MyFS(Fuse):
         _ensure_parent(p)
 
         # GDPR pre-check: block writes to non-temp files if session/consent is missing
+        original_len = len(data)
         if not _is_temp_name(path):
             _, uids = _get_file_and_user(p)
             if uids:
@@ -930,13 +983,16 @@ class MyFS(Fuse):
                     if not _check_consent(uid, _current_session_purpose):
                         print(f"[GDPR] Blocking write to {path}: {uid} has no consent")
                         raise OSError(EACCES, "GDPR policy: write requires consent")
-                # Art 9: check special consent for files with special data categories
-                cats_by_uid = _special_categories_by_uid_for_file(p)
-                for uid in uids:
-                    for cat in cats_by_uid.get(uid, set()):
-                        if not _check_special_consent(uid, cat):
-                            print(f"[GDPR Art9] Blocking write to {path}: {uid} lacks special consent for '{cat}'")
-                            raise OSError(EACCES, f"GDPR Art 9: write requires special consent for '{cat}'")
+                # Art 9: row-level for CSV (silent merge), file-level for others
+                if str(p).lower().endswith(".csv") and offset == 0 and p.exists():
+                    data = _csv_merge_protected_rows(p, data, uids)
+                else:
+                    cats_by_uid = _special_categories_by_uid_for_file(p)
+                    for uid in uids:
+                        for cat in cats_by_uid.get(uid, set()):
+                            if not _check_special_consent(uid, cat):
+                                print(f"[GDPR Art9] Blocking write to {path}: {uid} lacks special consent for '{cat}'")
+                                raise OSError(EACCES, f"GDPR Art 9: write requires special consent for '{cat}'")
 
         # Write to the real upper file
         with open(p, "r+b" if p.exists() else "wb") as f:
@@ -977,7 +1033,9 @@ class MyFS(Fuse):
         else:
             print(f"[LLM] Skipping LLM analysis for temp file {path}")
 
-        return len(data) # Returning len(data) tells FUSE “OK, I wrote everything.”
+        # Return the original length so FUSE thinks the full requested write
+        # succeeded even when CSV row merging changed the on-disk byte count.
+        return original_len
 
     def _emit_write_event(self, path: str):
         """Emit a GDPR Write event for a file when a write happens but no Write event is triggered."""
@@ -1567,13 +1625,20 @@ class MyFS(Fuse):
             if not all_consented:
                 print(f"[GDPR] Blocking final save for {new} due to missing consent")
                 raise OSError(EACCES, "GDPR policy: write requires external consent")
-            # Art 9: check special consent for files with special data categories
-            cats_by_uid = _special_categories_by_uid_for_file(new_p)
-            for uid in uids:
-                for cat in cats_by_uid.get(uid, set()):
-                    if not _check_special_consent(uid, cat):
-                        print(f"[GDPR Art9] Blocking final save for {new}: {uid} lacks special consent for '{cat}'")
-                        raise OSError(EACCES, f"GDPR Art 9: write requires special consent for '{cat}'")
+            # Art 9: row-level for CSV (silent merge), file-level for others
+            if uids and str(new).lower().endswith(".csv") and new_p.exists():
+                with open(old_p, "rb") as f:
+                    temp_bytes = f.read()
+                merged = _csv_merge_protected_rows(new_p, temp_bytes, uids)
+                with open(old_p, "wb") as f:
+                    f.write(merged)
+            elif uids:
+                cats_by_uid = _special_categories_by_uid_for_file(new_p)
+                for uid in uids:
+                    for cat in cats_by_uid.get(uid, set()):
+                        if not _check_special_consent(uid, cat):
+                            print(f"[GDPR Art9] Blocking final save for {new}: {uid} lacks special consent for '{cat}'")
+                            raise OSError(EACCES, f"GDPR Art 9: write requires special consent for '{cat}'")
 
         # ------------------------------------------------------
 
