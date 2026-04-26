@@ -1019,6 +1019,17 @@ class MyFS(Fuse):
                     if special_evts:
                         logger.log(special_evts, threading.Event(), False)
                         _emit_art30_records("Collect")  # Art 30 workaround
+                    else:
+                        # SpecialData events may have already been emitted this open() cycle
+                        # (deduplicated by _special_data_logged). Still emit the Art 30 Collect
+                        # record if the file carries consented special categories.
+                        cats_by_uid = _special_categories_by_uid_for_file(_upper(path))
+                        if any(
+                            _check_special_consent(uid, cat)
+                            for uid in uids
+                            for cat in cats_by_uid.get(uid, set())
+                        ):
+                            _emit_art30_records("Collect")
                 print(f"[GDPR] Collect events emitted for {path}: {list(uids)}")
             else:
                 print(f"[GDPR] No data subjects linked to {path}, skipping Collect")
