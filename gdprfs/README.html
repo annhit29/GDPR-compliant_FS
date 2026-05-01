@@ -613,7 +613,7 @@ Inside an active session:</p>
 <tr>
 <td><strong>Art 30</strong></td>
 <td>Records of processing</td>
-<td>When a <code>DataProcessing</code> event (<code>Use</code> for read, <code>Write</code> for write) involves special-category data, <code>gdpr.lex</code> fires the <code>Record</code> rules (Controller, Purpose, DataCategory, etc.), each persisted as a row in <code>processing_record</code>. Non-special-category processing is not recorded. <strong>Modeling note:</strong> Art 30(5) (SME exemption) is intentionally not applied in our refinement: special-category processing is always recorded regardless of SME status.</td>
+<td>When a <code>DataProcessing</code> event involves special-category data, <code>gdpr.lex</code> fires the <code>Record</code> rules (Controller, Purpose, DataCategory, etc.), each persisted as a row in <code>processing_record</code>. Non-special-category processing is not recorded. <strong>Modeling note:</strong> Art 30(5) (SME exemption) is intentionally not applied in our refinement: special-category processing is always recorded regardless of SME status.</td>
 </tr>
 </tbody>
 </table>

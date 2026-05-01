@@ -378,7 +378,7 @@ Then revoke `jdoe`'s consent (via the external consent platform at `:5000`), and
 | **Art 15** | Right of access | DS requests access → FUSE packages all their files + manifest into ZIP  |
 | **Art 16** | Right to rectification | DS uploads corrected file → FUSE replaces original  |
 | **Art 17** | Right to erasure | DS withdraws all consent + requests erasure → FUSE deletes file from upper + mirror + DB |
-| **Art 30** | Records of processing | When a `DataProcessing` event (`Use` for read, `Write` for write) involves special-category data, `gdpr.lex` fires the `Record` rules (Controller, Purpose, DataCategory, etc.), each persisted as a row in `processing_record`. Non-special-category processing is not recorded. **Modeling note:** Art 30(5) (SME exemption) is intentionally not applied in our refinement: special-category processing is always recorded regardless of SME status. |
+| **Art 30** | Records of processing | When a `DataProcessing` event involves special-category data, `gdpr.lex` fires the `Record` rules (Controller, Purpose, DataCategory, etc.), each persisted as a row in `processing_record`. Non-special-category processing is not recorded. **Modeling note:** Art 30(5) (SME exemption) is intentionally not applied in our refinement: special-category processing is always recorded regardless of SME status. |
 
 ---
 
