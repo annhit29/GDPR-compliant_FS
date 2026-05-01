@@ -35,7 +35,6 @@ A FUSE-based file system that enforces GDPR compliance at the filesystem level. 
 
 | Component | Port | Role |
 |-----------|------|------|
-| **FUSE Daemon** (`gdprfs/myfs.py`) | 7000 (ingest) | Core filesystem + GDPR enforcement. Intercepts all file ops, checks consent, emits events to EnfGuard enforcer. |
 | **External Consent Platform** (`external_consent_platform/`) | 5000 | Web portal for Data Subjects (DS). Manages consent, Art 15/16/17 requests. |
 | **Internal Purpose Platform** (`internal_purpose_platform/`) | 8000 | Web portal for internal users. Manages sessions (purpose/reason), merge alerts, `.gdprowner` declarations. |
 | **LLM Analyzer** (`LLManalyzer/`) | 5005 | GPT API (gpt-5-nano) wrapper. Scans file contents for PII and Art 9 special data categories. |
@@ -67,17 +66,17 @@ External Consent Platform (:5000)    Internal Purpose Platform (:8000)
 ### Communication Matrix
 | From | To | Port | Endpoint | Implemented in (= where the server route is defined) | Purpose |
 |------|----|------|----------|----------------|---------|
-| Poller | DS Interface | 5000 | `GET /api/events?status=pending` | `external_consent_platform/api.py` | Fetch all pending consent events |
-| Poller | DS Interface | 5000 | `PATCH /api/events/{id}/ack` | `external_consent_platform/api.py` | Acknowledge processed event |
+| Poller | External Consent Platform | 5000 | `GET /api/events?status=pending` | `external_consent_platform/api.py` | Fetch all pending consent events |
+| Poller | External Consent Platform | 5000 | `PATCH /api/events/{id}/ack` | `external_consent_platform/api.py` | Acknowledge processed event |
 | Poller | Ingest Server | 7000 | `POST /ingest` | `gdprfs/myfs.py` | Forward consent and request events |
 | Internal Purpose Platform | Ingest Server | 7000 | `POST /ingest` | `gdprfs/myfs.py` | StartSession and StopSession |
-| DS Interface | Ingest Server | 7000 | `POST /sync_users` | `gdprfs/myfs.py` | Notify new DS registration |
-| DS Interface | Ingest Server | 7000 | `POST /upload_rectification` | `gdprfs/myfs.py` | Art 16 file rectification |
-| DS Interface | Ingest Server | 7000 | `GET /access_status/{uid}` | `gdprfs/myfs.py` | Art 15 status check |
-| DS Interface | Ingest Server | 7000 | `GET /access_download/{id}` | `gdprfs/myfs.py` | Art 15 ZIP download |
-| PDP | DS Interface | 5000 | `GET /api/consents/{uid}/{purpose}` | `external_consent_platform/api.py` | Check regular consent (Art 6) |
-| PDP | DS Interface | 5000 | `GET /api/consents/special/{uid}/{spCat}` | `external_consent_platform/api.py` | Check special data categories consent (Art 9) |
-| PDP | DS Interface | 5000 | `GET /api/users` | `external_consent_platform/api.py` | Sync registered users |
+| External Consent Platform | Ingest Server | 7000 | `POST /sync_users` | `gdprfs/myfs.py` | Notify new DS registration |
+| External Consent Platform | Ingest Server | 7000 | `POST /upload_rectification` | `gdprfs/myfs.py` | Art 16 file rectification |
+| External Consent Platform | Ingest Server | 7000 | `GET /access_status/{uid}` | `gdprfs/myfs.py` | Art 15 status check |
+| External Consent Platform | Ingest Server | 7000 | `GET /access_download/{id}` | `gdprfs/myfs.py` | Art 15 ZIP download |
+| PDP | External Consent Platform | 5000 | `GET /api/consents/{uid}/{purpose}` | `external_consent_platform/api.py` | Check regular consent (Art 6) |
+| PDP | External Consent Platform | 5000 | `GET /api/consents/special/{uid}/{spCat}` | `external_consent_platform/api.py` | Check special data categories consent (Art 9) |
+| PDP | External Consent Platform | 5000 | `GET /api/users` | `external_consent_platform/api.py` | Sync registered users |
 
 ---
 
@@ -250,7 +249,7 @@ sudo rm internal_purpose_platform/instance/internal_purpose_platform.db
 | `file` | id, file_id (unique), abs_path, created_at, modified_at, accessed_at, sha256, special_categories, last_action | File metadata + Art 9 categories |
 | `person` | id, uid (unique, nullable), first_name, last_name, registered (bool) | Data subjects. `registered=True` = signed up on external platform. `uid=NULL` = detected by LLM but unregistered. |
 | `person_file_map` | person_id, file_id | Many-to-many: which persons are linked to which files |
-| `person_file_special_category` | id, person_id, file_id, special_category | Per-person-per-file Art 9 categories (e.g., Alice has "health" data in report.pdf) |
+| `person_file_special_category` | id, person_id, file_id, special_category, page_index, row_index | Per-person-per-file Art 9 categories (e.g., Alice has "health" data in report.pdf). `page_index` records which PDF page the category was detected on. `row_index` is reserved for CSV row-level tracking. Both NULL means either no special category was detected, or the file is a TXT (a single chunk = the whole file, so no index is needed). |
 | `processing_record` | id, processor, controller, activity, property, value, timestamp | Art 30 records of processing activities (audit trail) |
 | `alias_person_map` | id, alias (unique), person_id | Human-confirmed name aliases (e.g., "Hsieeh" → "Hsieh") |
 
@@ -274,6 +273,8 @@ sudo rm internal_purpose_platform/instance/internal_purpose_platform.db
 ## 6. Core Concepts
 
 ### 6.1 Two-Layer File Architecture
+
+![Two-layer file architecture](./archiDiag_twoLayers.jpg)
 
 | Layer | Path | Access | Purpose |
 |-------|------|--------|---------|
@@ -377,7 +378,7 @@ Then revoke `jdoe`'s consent (via the external consent platform at `:5000`), and
 | **Art 15** | Right of access | DS requests access → FUSE packages all their files + manifest into ZIP  |
 | **Art 16** | Right to rectification | DS uploads corrected file → FUSE replaces original  |
 | **Art 17** | Right to erasure | DS withdraws all consent + requests erasure → FUSE deletes file from upper + mirror + DB |
-| **Art 30** | Records of processing | Every enforcement action logged to `ProcessingRecord` table with timestamp |
+| **Art 30** | Records of processing | When a `DataProcessing` event (`Use` for read, `Write` for write) involves special-category data, `gdpr.lex` fires the `Record` rules (Controller, Purpose, DataCategory, etc.), each persisted as a row in `processing_record`. Non-special-category processing is not recorded. **Modeling note:** Art 30(5) (SME exemption) is intentionally not applied in our refinement: special-category processing is always recorded regardless of SME status. |
 
 ---
 
