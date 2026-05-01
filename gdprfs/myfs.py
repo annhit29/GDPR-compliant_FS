@@ -465,7 +465,7 @@ def _csv_merge_protected_rows(target_path: Path, new_bytes: bytes, file_level_ui
     return buf.getvalue().encode("utf-8")
 
 def _emit_art30_records(activity):
-    """Art 30: manually cause Record events (enforcer causation bug workaround).
+    """Art 30:
     Called after SpecialData events are logged, since special data overrides the SME exemption."""
     records = [
         {"name": "Record", "args": ["GDPRFS", "GDPRFS", activity, "Controller", "GDPRFS"]},
@@ -868,7 +868,7 @@ def start_ingest_server(logger):
                         resp_evt = Event("RequestResponse", uid, "rectification", response_id)
                         logger.log([resp_evt], threading.Event(), False)
 
-                        # Perform rectification in background (enforcer causation bug workaround)
+                        # Perform rectification in background
                         threading.Thread(target=rectify_causation_handler,
                                          args=([{"name": "Rectify", "args": [fid_old, fid_new]}],),
                                          daemon=True).start()
@@ -1064,7 +1064,7 @@ class MyFS(Fuse):
                 special_evts = _special_data_events(fid, _upper(path), uids)
                 if special_evts:
                     logger.log(special_evts, threading.Event(), False)
-                    _emit_art30_records("Write")  # Art 30 workaround: Write is also DataProcessing("Use")
+                    _emit_art30_records("Write")
         except Exception as e:
             print(f"[GDPR] Warning: failed to emit Write event for {path}: {e}")
 
@@ -1089,7 +1089,7 @@ class MyFS(Fuse):
                     special_evts = _special_data_events(fid, _upper(path), uids)
                     if special_evts:
                         logger.log(special_evts, threading.Event(), False)
-                        _emit_art30_records("Collect")  # Art 30 workaround
+                        _emit_art30_records("Collect")
                     else:
                         # SpecialData events may have already been emitted this open() cycle
                         # (deduplicated by _special_data_logged). Still emit the Art 30 Collect
@@ -1212,7 +1212,7 @@ class MyFS(Fuse):
                 special_evts = _special_data_events(page_fid, abspath, uids, page_index=idx)
                 if special_evts:
                     logger.log(special_evts, threading.Event(), False)
-                    _emit_art30_records("Use")  # Art 30 workaround
+                    _emit_art30_records("Use")
 
         # 4) Serialize redacted PDF once
         buf = BytesIO()
@@ -1298,7 +1298,7 @@ class MyFS(Fuse):
                 special_evts = _special_data_events(row_fid, abspath, file_level_uids, row_index=idx)
                 if special_evts:
                     logger.log(special_evts, threading.Event(), False)
-                    _emit_art30_records("Use")  # Art 30 workaround
+                    _emit_art30_records("Use")
 
         # Serialize CSV back to bytes
         buf = StringIO()
@@ -1550,7 +1550,7 @@ class MyFS(Fuse):
             special_evts = _special_data_events(fid, p, uids)
             if special_evts:
                 logger.log(special_evts, threading.Event(), False)
-                _emit_art30_records("Use")  # Art 30 workaround
+                _emit_art30_records("Use")
 
             # Otherwise → allow full file text
             with open(p, "rb") as f:
