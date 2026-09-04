@@ -5,11 +5,13 @@ It is tailored for batched policy decision points (PDPs), like EnfGuard.
 
 # Structure
 
+
 The repository is structured as follows:
 
 - `instrlib/`: Contains the instrumentation library code
 - `tests/`: Contains unit tests for the library
 - `*_case_study/`: Contains case studies showcasing the use of the library
+GDPRFS case study: **Please find the GDPRFS README [here](gdprfs/README.md).**
 
 # General Usage
 1. Download the WhyEnf enforcer from the following repository: https://github.com/runtime-enforcement/enfguard.git 
